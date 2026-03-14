@@ -3693,8 +3693,39 @@ function _mpMaybeStart(){
   mpStartBattle();
 }
 
-function mpOnData(data){
+async function mpOnData(data){
   switch(data.type){
+    case 'round-result':{
+      const result=data.result;
+      mpApplyResult(result, false);
+      const cs2=document.getElementById('mp-opp-slot');
+      if(MP.oppLockedCard&&cs2){ cs2.innerHTML=buildCardEl(MP.oppLockedCard).outerHTML; cs2.className='slot filled'; }
+      await mpShowRoundResult(result, MP.myLockedCard, MP.oppLockedCard);
+      mpAfterRound();
+      break;
+    }
+    // ── INTERACTIVE EFFECT MESSAGES ──
+    case 'interactive-start':
+      // Opponent (non-caster) receives this and opens their side of the interactive UI
+      mpHandleInteractiveAsOpponent(data.effect, data.casterName);
+      break;
+    case 'interactive-pick':
+      // Caster receives opponent's pick (for Triple Mind / Trial)
+      if(MP._interactiveResolve) MP._interactiveResolve(data.pick);
+      break;
+    case 'jester-coin':
+      // Both players animate the coin; non-caster sees animation only
+      mpShowCoinAnimation(data.side, data.won, false);
+      break;
+    case 'focus-reveal':
+      // Opponent receives focus reveal — shows their own card was peeked
+      mpSetLog(`👁 ${data.casterName} used Focus and saw your locked card!`);
+      break;
+    case 'careful-done':
+      // Opponent receives notification that caster reordered their deck
+      mpSetLog(`📋 ${data.casterName} used Careful Planning.`);
+      break;
+    // ── STANDARD ──
     case 'hello':
       MP.oppName=data.name||'Opponent';
       _mpHelloBuffer.received=true;
@@ -3704,19 +3735,16 @@ function mpOnData(data){
       break;
     case 'card-locked':
       MP.oppLockedCard=data.card;
-      // Show a face-down card in the opponent's VS slot
       const cs=document.getElementById('mp-opp-slot');
       if(cs){
         cs.innerHTML='<div class="card-back" style="width:100%;height:100%;border-radius:8px;display:flex;align-items:center;justify-content:center;"><div style="font-size:1.4rem;opacity:.5;">🂠</div></div>';
         cs.className='slot filled';
       }
       mpSetLog('Opponent locked in — make your choice!');
-      // Start timer for us if we haven't locked yet
       if(!MP.myLockedCard) mpStartTimer();
       _mpMaybeReveal();
       break;
     case 'draw-request':
-      // Opponent drew a card — no effect on us, just acknowledge
       break;
     case 'rematch':
       mpStartBattle();
@@ -3727,6 +3755,386 @@ function mpOnData(data){
       break;
   }
 }
+// ══════════════════════════════════════════════════════
+//  MP INTERACTIVE EFFECTS
+// ══════════════════════════════════════════════════════
+
+// Shared promise resolver — set when we're waiting for an opponent's pick
+MP._interactiveResolve = null;
+
+function mpWaitForOpponentPick(){
+  return new Promise(resolve => { MP._interactiveResolve = resolve; });
+}
+
+// Called on host side — runs the interactive effect and returns a partial result object
+async function mpRunInteractive(effect, iAmCaster, myCard, oppCard){
+  const result = { outcome:'draw', myDmg:0, oppDmg:0, myHeal:0, myDrawCards:0, msg:'', effectName:myCard.effect===effect?myCard.name:oppCard.name };
+  const pPow = Math.max(myCard.power||0,3);
+  const cPow = Math.max(oppCard.power||0,3);
+  const casterName = iAmCaster ? 'You' : MP.oppName;
+
+  switch(effect){
+
+    // ── JESTER: caster picks heads/tails, animation shown on both screens ──
+    case 'jester': {
+      let pick;
+      if(iAmCaster){
+        mpSend({type:'interactive-start', effect:'jester', casterName:'You'});
+        pick = await mpJesterPickUI();  // returns 'heads' or 'tails'
+      } else {
+        // Opponent is picking — show waiting UI
+        mpSetLog(`🃏 ${MP.oppName} is flipping the coin…`);
+        mpSend({type:'interactive-start', effect:'jester-wait', casterName:MP.oppName});
+        pick = await mpWaitForOpponentPick(); // receives the pick back
+      }
+      // Compute result with luck (host always computes)
+      const luck = 50; // neutral in MP
+      const winChance = luck / 100;
+      const won = Math.random() < winChance;
+      const landedSide = won ? pick : (pick==='heads'?'tails':'heads');
+      // Broadcast coin animation to both
+      mpSend({type:'jester-coin', side:landedSide, won, casterIsMe:false});
+      // Animate on caster's screen too
+      await mpShowCoinAnimation(landedSide, won, true);
+      if(won){ result.outcome='win'; result.oppDmg=Math.max(6,Math.floor(MP.oppMaxHP*0.2)); result.msg='Jester: HEADS! Fortune favours you!'; }
+      else    { result.outcome='lose'; result.myDmg=Math.max(5,Math.floor(MP.myMaxHP*0.2)); result.msg='Jester: TAILS! Fate betrays you!'; }
+      break;
+    }
+
+    // ── TRIPLE MIND: opponent picks R/P/S, caster guesses ──
+    case 'tripleMind': {
+      if(iAmCaster){
+        // Tell opponent to pick, then wait for their pick, then let caster guess
+        mpSend({type:'interactive-start', effect:'triple-mind-pick', casterName:'You'});
+        mpSetLog('🧠 Triple Mind Game: Waiting for opponent to pick…');
+        const oppPick = await mpWaitForOpponentPick();
+        // Now show guess UI to caster
+        const guess = await mpShowGuessUI('🧠 Triple Mind Game', `Guess what ${MP.oppName} picked!`, 'Correct → Draw 3 cards | Wrong → Discard 2');
+        if(guess === oppPick){
+          result.myDrawCards=3; result.msg=`Triple Mind: Correct! ${MP.oppName} picked ${oppPick} — drew 3 cards!`; result.outcome='draw';
+        } else {
+          const disc=Math.min(2,MP.myHand.length);
+          for(let i=0;i<disc;i++) MP.myHand.splice(Math.floor(Math.random()*MP.myHand.length),1);
+          mpRenderHand();
+          result.msg=`Triple Mind: Wrong! ${MP.oppName} picked ${oppPick} — discarded ${disc} cards.`; result.outcome='draw';
+        }
+        mpSend({type:'interactive-done', reveal:{oppPick, guess}});
+      } else {
+        // Opponent: show a pick UI
+        mpSetLog('🧠 Triple Mind Game: Pick Rock, Paper or Scissors!');
+        mpSend({type:'interactive-start', effect:'triple-mind-caster-wait', casterName:MP.oppName});
+        const myPick = await mpShowPickUI('🧠 Triple Mind Game', `${MP.oppName} is guessing your pick. Choose:`);
+        mpSend({type:'interactive-pick', pick:myPick});
+        // Wait for result notification (sent via round-result)
+        result.msg='Triple Mind: Waiting for outcome…'; result.outcome='draw';
+      }
+      break;
+    }
+
+    // ── TRIAL: same structure as Triple Mind but 6 attempts, 3 correct ──
+    case 'trialCard': {
+      if(iAmCaster){
+        mpSend({type:'interactive-start', effect:'trial-pick', casterName:'You'});
+        playGavel(3);
+        await mpDelay(300);
+        const trialResult = await mpRunMpTrial();
+        result.outcome = trialResult.outcome;
+        result.oppDmg  = trialResult.oppDmg||0;
+        result.myHeal  = trialResult.myHeal||0;
+        result.msg     = trialResult.msg;
+        mpSend({type:'trial-done', trialResult});
+      } else {
+        mpSetLog('⚖ The Trial has been called. Pick your cards…');
+        playGavel(3);
+        const trialResult = await mpRunMpTrialOpponent();
+        // Joiner's result is determined by host via round-result — just wait
+        result.outcome='draw'; result.msg='Trial complete — awaiting verdict.';
+      }
+      break;
+    }
+
+    // ── FOCUS: reveal opponent's locked card if they have one ──
+    case 'focusCard': {
+      if(iAmCaster){
+        if(MP.oppLockedCard){
+          // Show their locked card to the caster
+          mpShowCardRevealOverlay(`👁 Focus: ${MP.oppName}'s card`, MP.oppLockedCard);
+          mpSend({type:'focus-reveal', casterName:'Opponent', cardName:MP.oppLockedCard.name});
+          result.msg=`Focus: You saw ${MP.oppName}'s card — ${MP.oppLockedCard.name}!`;
+        } else {
+          mpSetLog(`Focus: ${MP.oppName} hasn't locked in yet — no card to see.`);
+          result.msg=`Focus: No card locked — peeked their deck top.`;
+        }
+        result.outcome='draw';
+        await mpDelay(2500);
+      } else {
+        // Opponent: just show a notification
+        mpSetLog('👁 Opponent used Focus — they can see your locked card!');
+        result.outcome='draw'; result.msg='Focus activated.';
+        await mpDelay(1500);
+      }
+      break;
+    }
+
+    // ── CAREFUL PLANNING: reorder top 3 of own deck ──
+    case 'carefulPlanning': {
+      if(iAmCaster){
+        const reordered = await mpCarefulPlanningUI();
+        if(reordered) G.playerDeck; // local only — MP uses MP.myDeck
+        result.msg='Careful Planning: Top 3 cards reordered.';
+        mpSend({type:'careful-done', casterName:'You'});
+      } else {
+        mpSetLog(`📋 ${MP.oppName} is reorganising their deck…`);
+        await mpDelay(3000);
+        result.msg='Careful Planning: Opponent reordered their deck.';
+      }
+      result.outcome='draw';
+      break;
+    }
+  }
+  return result;
+}
+
+// Non-caster receives interactive-start
+function mpHandleInteractiveAsOpponent(effect, casterName){
+  switch(effect){
+    case 'jester-wait':
+      mpSetLog(`🃏 ${casterName} is flipping the coin…`); break;
+    case 'triple-mind-pick':
+      // Show pick UI — send pick back
+      mpShowPickUI('🧠 Triple Mind Game',`${casterName} is guessing your pick. Choose:`).then(pick=>{
+        mpSend({type:'interactive-pick',pick});
+        mpSetLog(`You picked ${pick} — waiting for ${casterName}'s guess…`);
+      });
+      break;
+    case 'triple-mind-caster-wait':
+      mpSetLog(`🧠 Triple Mind Game: ${casterName} is guessing…`); break;
+    case 'trial-pick':
+      mpRunMpTrialOpponent().then(()=>{});
+      break;
+  }
+}
+
+// ── JESTER UI ──
+function mpJesterPickUI(){
+  return new Promise(resolve=>{
+    const ol=_mpMakeOverlay('jester-pick-ol');
+    ol.innerHTML=`
+      <div style="font-family:'Cinzel',serif;font-size:1.4rem;color:var(--gold);">🃏 The Jester's Gambit</div>
+      <div style="font-size:.85rem;color:var(--t2);">Choose heads or tails — your fate is being decided!</div>
+      <div style="display:flex;gap:1rem;flex-wrap:wrap;justify-content:center;">
+        <button class="btn primary" style="font-size:1.1rem;padding:.7rem 1.8rem;" onclick="_mpPickClose('jester-pick-ol','heads')">🌕 Heads</button>
+        <button class="btn danger"  style="font-size:1.1rem;padding:.7rem 1.8rem;" onclick="_mpPickClose('jester-pick-ol','tails')">🌑 Tails</button>
+      </div>`;
+    ol._resolve=resolve;
+    document.body.appendChild(ol);
+  });
+}
+
+async function mpShowCoinAnimation(landedSide, casterWon, isCaster){
+  const ol=_mpMakeOverlay('jester-anim-ol');
+  ol.innerHTML=`
+    <div style="font-family:'Cinzel',serif;font-size:1.3rem;color:var(--gold);">🃏 The Jester flips…</div>
+    <canvas id="mp-coin-canvas" width="160" height="160" style="border-radius:50%;"></canvas>
+    <div id="mp-coin-result" style="font-family:'Cinzel',serif;font-size:1.4rem;font-weight:900;min-height:2rem;text-align:center;"></div>`;
+  document.body.appendChild(ol);
+  const canvas=document.getElementById('mp-coin-canvas');
+  if(canvas) await animateCoinFlip(canvas, landedSide);
+  const resEl=document.getElementById('mp-coin-result');
+  const won = isCaster ? casterWon : !casterWon;
+  if(resEl){
+    resEl.style.color=won?'var(--scissors-l)':'var(--rock-l)';
+    resEl.textContent=won?`🌟 ${landedSide.toUpperCase()}! You WIN!`:`💀 ${landedSide.toUpperCase()}! You LOSE!`;
+  }
+  await mpDelay(1800);
+  ol.remove();
+}
+
+// ── GUESS / PICK UI ──
+function mpShowGuessUI(title, subtitle, hint){
+  return new Promise(resolve=>{
+    const ol=_mpMakeOverlay('mp-guess-ol');
+    ol.innerHTML=`
+      <div style="font-family:'Cinzel',serif;font-size:1.2rem;color:var(--gold);">${title}</div>
+      <div style="font-size:.83rem;color:var(--t2);text-align:center;">${subtitle}</div>
+      ${hint?`<div style="font-size:.74rem;color:var(--t3);text-align:center;">${hint}</div>`:''}
+      <div style="display:flex;gap:.75rem;flex-wrap:wrap;justify-content:center;">
+        <button class="btn sm danger"   onclick="_mpPickClose('mp-guess-ol','rock')">🪨 Rock</button>
+        <button class="btn sm info"     onclick="_mpPickClose('mp-guess-ol','paper')">📄 Paper</button>
+        <button class="btn sm success"  onclick="_mpPickClose('mp-guess-ol','scissors')">✂️ Scissors</button>
+      </div>`;
+    ol._resolve=resolve;
+    document.body.appendChild(ol);
+  });
+}
+
+function mpShowPickUI(title, subtitle){
+  return mpShowGuessUI(title, subtitle, '');
+}
+
+// ── TRIAL (MP VERSION) ──
+// Caster side — iterates 6 guesses, opponent sends each pick
+async function mpRunMpTrial(){
+  let guessesLeft=6, correctCount=0, streakCount=0;
+  const results=[];
+  const ol=_mpMakeOverlay('mp-trial-ol');
+
+  const render=()=>{
+    ol.innerHTML=`
+      <div style="font-family:'Cinzel',serif;font-size:1.3rem;color:var(--gold);">⚖ The Trial</div>
+      <div style="font-size:.78rem;color:var(--t2);text-align:center;">${MP.oppName} is picking. Guess their symbol. ${guessesLeft} attempts left · ${correctCount}/3 correct · streak ${streakCount}</div>
+      <div style="display:flex;gap:.4rem;justify-content:center;">${results.map(r=>`<div style="width:14px;height:14px;border-radius:50%;background:${r==='correct'?'var(--scissors)':'var(--rock)'}"></div>`).join('')}</div>
+      <div style="display:flex;gap:.75rem;flex-wrap:wrap;justify-content:center;">
+        <button class="btn sm danger"   onclick="_mpPickClose('mp-trial-guess','rock')">🪨 Rock</button>
+        <button class="btn sm info"     onclick="_mpPickClose('mp-trial-guess','paper')">📄 Paper</button>
+        <button class="btn sm success"  onclick="_mpPickClose('mp-trial-guess','scissors')">✂️ Scissors</button>
+      </div>
+      <div id="mp-trial-log" style="font-size:.8rem;color:var(--t2);font-style:italic;min-height:1.2rem;text-align:center;"></div>`;
+  };
+
+  render();
+  document.body.appendChild(ol);
+
+  while(guessesLeft>0 && correctCount<3){
+    // Wait for opponent to pick (they send interactive-pick)
+    // Tell opponent to pick
+    mpSend({type:'interactive-start', effect:'trial-pick-one', casterName:'You'});
+    const oppPick = await mpWaitForOpponentPick();
+    // Now wait for caster's guess
+    const guessEl=document.createElement('div'); guessEl.id='mp-trial-guess'; guessEl.style.display='none'; document.body.appendChild(guessEl);
+    const guess = await new Promise(res=>{ guessEl._resolve=res; });
+    guessEl.remove();
+    const correct = guess===oppPick;
+    if(correct){ correctCount++; streakCount++; results.push('correct'); }
+    else { streakCount=0; results.push('wrong'); }
+    guessesLeft--;
+    const logEl=ol.querySelector('#mp-trial-log');
+    if(logEl) logEl.textContent=correct?`✅ Correct! ${MP.oppName} picked ${oppPick}. (${correctCount}/3)`:`❌ Wrong! ${MP.oppName} picked ${oppPick}.`;
+    render(); // re-render pips
+    if(ol.querySelector('#mp-trial-log')) ol.querySelector('#mp-trial-log').textContent=correct?`✅ Correct! (${correctCount}/3)`:`❌ Wrong!`;
+    await mpDelay(700);
+    if(streakCount>=3||correctCount>=3||guessesLeft<=0) break;
+  }
+  ol.remove();
+
+  if(streakCount>=3){
+    return { outcome:'win', oppDmg:MP.oppHP, myHeal:MP.oppHP, msg:'Trial PERFECT! Absorbed all opponent HP!' };
+  } else if(correctCount>=3){
+    const halfHP=Math.floor(MP.oppHP/2);
+    return { outcome:'win', oppDmg:halfHP, myHeal:halfHP, msg:`Trial Success! Claimed ${halfHP} HP!` };
+  } else {
+    return { outcome:'draw', oppDmg:0, myHeal:0, msg:'Trial: No reward this time.' };
+  }
+}
+
+// Opponent side — shows a pick button each round
+async function mpRunMpTrialOpponent(){
+  const ol=_mpMakeOverlay('mp-trial-opp-ol');
+  ol.innerHTML=`
+    <div style="font-family:'Cinzel',serif;font-size:1.3rem;color:var(--gold);">⚖ The Trial</div>
+    <div style="font-size:.83rem;color:var(--t2);text-align:center;">You are being judged. Pick your symbol when prompted.</div>
+    <div id="mp-trial-opp-btns" style="display:flex;gap:.75rem;flex-wrap:wrap;justify-content:center;"></div>
+    <div id="mp-trial-opp-log" style="font-size:.8rem;color:var(--t2);font-style:italic;min-height:1.2rem;text-align:center;"></div>`;
+  document.body.appendChild(ol);
+  // The caster sends 'trial-pick-one' up to 6 times — each time we show the buttons
+  // We listen via mpHandleInteractiveAsOpponent which is already set up
+  await mpDelay(15000); // max trial duration
+  ol.remove();
+}
+
+// Card reveal overlay (for Focus)
+function mpShowCardRevealOverlay(title, card){
+  const ol=_mpMakeOverlay('mp-reveal-ol');
+  const cardEl=buildCardEl(card);
+  ol.innerHTML=`
+    <div style="font-family:'Cinzel',serif;font-size:1.1rem;color:var(--gold);">${title}</div>`;
+  ol.appendChild(cardEl);
+  const btn=document.createElement('button');
+  btn.className='btn sm'; btn.textContent='Got it';
+  btn.onclick=()=>ol.remove();
+  ol.appendChild(btn);
+  document.body.appendChild(ol);
+  setTimeout(()=>{ if(ol.parentNode) ol.remove(); }, 4000);
+}
+
+// Careful Planning UI
+async function mpCarefulPlanningUI(){
+  const top3=MP.myDeck.slice(0,3);
+  if(top3.length===0) return false;
+  return new Promise(resolve=>{
+    const ol=_mpMakeOverlay('mp-plan-ol');
+    let order=[...top3];
+    const render=()=>{
+      ol.innerHTML=`
+        <div style="font-family:'Cinzel',serif;font-size:1.1rem;color:var(--gold);">📋 Careful Planning</div>
+        <div style="font-size:.8rem;color:var(--t2);text-align:center;">Drag to reorder — or click arrows to move cards in your top 3.</div>
+        <div style="display:flex;gap:.5rem;justify-content:center;flex-wrap:wrap;">
+          ${order.map((c,i)=>`
+            <div style="display:flex;flex-direction:column;align-items:center;gap:.3rem;">
+              <div style="font-size:.65rem;color:var(--t3);">#${i+1}</div>
+              ${buildCardEl(c).outerHTML}
+              <div style="display:flex;gap:.25rem;">
+                ${i>0?`<button class="btn xs" onclick="_mpPlanMove(${i},-1)">←</button>`:''}
+                ${i<order.length-1?`<button class="btn xs" onclick="_mpPlanMove(${i},1)">→</button>`:''}
+              </div>
+            </div>`).join('')}
+        </div>
+        <button class="btn primary" onclick="_mpPlanConfirm()">Confirm Order</button>`;
+      window._mpPlanOrder=order;
+      window._mpPlanMove=(idx,dir)=>{ const t=order[idx+dir]; order[idx+dir]=order[idx]; order[idx]=t; render(); };
+      window._mpPlanConfirm=()=>{ MP.myDeck.splice(0,order.length,...order); ol.remove(); resolve(true); };
+    };
+    render();
+    document.body.appendChild(ol);
+  });
+}
+
+// ── HELPERS ──
+function _mpMakeOverlay(id){
+  const existing=document.getElementById(id); if(existing) existing.remove();
+  const ol=document.createElement('div');
+  ol.id=id;
+  ol.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:600;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1rem;padding:1.5rem;';
+  return ol;
+}
+
+function _mpPickClose(olId, value){
+  const ol=document.getElementById(olId)||document.querySelector(`[id="${olId}"]`);
+  if(ol){
+    if(ol._resolve){ ol._resolve(value); ol._resolve=null; }
+    ol.remove();
+  }
+  // Also check for trial guess div
+  const tg=document.getElementById('mp-trial-guess');
+  if(tg&&tg._resolve){ tg._resolve(value); tg._resolve=null; tg.remove(); }
+}
+
+// Trial opponent pick handler — called from mpHandleInteractiveAsOpponent
+function mpHandleTrialOppPick(){
+  const btns=document.getElementById('mp-trial-opp-btns');
+  if(!btns) return;
+  btns.innerHTML=`
+    <button class="btn sm danger"   onclick="_mpTrialOppPick('rock')">🪨 Rock</button>
+    <button class="btn sm info"     onclick="_mpTrialOppPick('paper')">📄 Paper</button>
+    <button class="btn sm success"  onclick="_mpTrialOppPick('scissors')">✂️ Scissors</button>`;
+}
+
+function _mpTrialOppPick(pick){
+  const btns=document.getElementById('mp-trial-opp-btns');
+  if(btns) btns.innerHTML=`<div style="font-size:.8rem;color:var(--scissors-l);">Picked: ${pick} — waiting for guess…</div>`;
+  const log=document.getElementById('mp-trial-opp-log');
+  if(log) log.textContent='Waiting for judgement…';
+  mpSend({type:'interactive-pick', pick});
+}
+
+// ── TRIAL-PICK-ONE HANDLER FOR OPPONENT ──
+// Extend mpHandleInteractiveAsOpponent for trial-pick-one
+const _origMpHandleInteractive = mpHandleInteractiveAsOpponent;
+function mpHandleInteractiveAsOpponent(effect, casterName){
+  if(effect==='trial-pick-one'){ mpHandleTrialOppPick(); return; }
+  _origMpHandleInteractive(effect, casterName);
+}
+
 // ── BATTLE SETUP ──
 function mpStartBattle(){
   mpStopTimer();
@@ -3836,78 +4244,196 @@ function mpPlayCard(){
   _mpMaybeReveal();
 }
 
-// ── REVEAL ──
+// ── REVEAL TRIGGER ──
 function _mpMaybeReveal(){
   if(MP.myLockedCard&&MP.oppLockedCard) setTimeout(mpRevealCards,400);
 }
 
+// Called on BOTH sides once both cards are locked. Only the host resolves.
 async function mpRevealCards(){
   mpStopTimer();
   MP.phase='revealing';
-  const pCard=MP.myLockedCard;
-  const cCard=MP.oppLockedCard;
-  if(!pCard||!cCard) return;
+  const myCard  = MP.myLockedCard;
+  const oppCard = MP.oppLockedCard;
+  if(!myCard||!oppCard) return;
 
-  // Reveal opponent's card in their slot
+  // Reveal opponent's card visually
   const ps=document.getElementById('mp-p-slot');
   const cs=document.getElementById('mp-opp-slot');
-  if(cs){
-    const oppEl=buildCardEl(cCard);
-    cs.innerHTML=oppEl.outerHTML;
-    cs.className='slot filled';
-  }
+  if(cs){ cs.innerHTML=buildCardEl(oppCard).outerHTML; cs.className='slot filled'; }
   await mpDelay(500);
 
-  // Resolve — treat specials as their base type or auto-win
-  const pType=['rock','paper','scissors'].includes(pCard.type)?pCard.type:'rock';
-  const cType=['rock','paper','scissors'].includes(cCard.type)?cCard.type:'rock';
-  const pPow=Math.max(pCard.power||0, 3);
-  const cPow=Math.max(cCard.power||0, 3);
-  // Special effects: auto-win for whoever played the special
-  let outcome;
-  if(pCard.type==='special'&&cCard.type!=='special') outcome='win';
-  else if(cCard.type==='special'&&pCard.type!=='special') outcome='lose';
-  else outcome=rpsResolve(pType,cType,pPow,cPow);
+  if(MP.isHost){
+    // ── HOST resolves and broadcasts ──
+    // Check for interactive effects that need player input before resolving
+    const interactiveEffects = new Set(['jester','tripleMind','trialCard','focusCard','carefulPlanning']);
+    const playedInteractive = interactiveEffects.has(myCard.effect) ? myCard : 
+                              interactiveEffects.has(oppCard.effect) ? oppCard : null;
 
-  let dmg=0;
+    if(playedInteractive){
+      const iAmCaster = (playedInteractive === myCard);
+      const interactResult = await mpRunInteractive(playedInteractive.effect, iAmCaster, myCard, oppCard);
+      // interactResult is a partial result — finalise into full round result
+      const result = interactResult;
+      _mpFinaliseResult(result, Math.max(myCard.power||0,3), Math.max(oppCard.power||0,3));
+      mpApplyResult(result, true);
+      mpSend({ type:'round-result', result: mpMirrorResult(result) });
+      await mpShowRoundResult(result, myCard, oppCard);
+      mpAfterRound();
+      return;
+    }
+
+    const result = mpResolveEffect(myCard, oppCard);
+    // Apply to host state
+    mpApplyResult(result, true);
+    // Send mirror result to joiner (swap player/opp damage)
+    mpSend({ type:'round-result', result: mpMirrorResult(result) });
+    await mpShowRoundResult(result, myCard, oppCard);
+    mpAfterRound();
+  } else {
+    // ── JOINER waits for host's round-result message ──
+    // (handled in mpOnData → 'round-result')
+    mpSetLog('Resolving…');
+  }
+}
+
+// Resolve the effect of myCard vs oppCard from the perspective of "me"
+function mpResolveEffect(myCard, oppCard){
+  const result = {
+    outcome: 'draw',   // 'win' | 'lose' | 'draw'
+    myDmg: 0,          // damage I take
+    oppDmg: 0,         // damage opponent takes
+    myHeal: 0,         // HP I gain
+    myDrawCards: 0,    // extra cards I draw
+    msg: '',
+    effectName: '',
+  };
+
+  // Determine base types
+  let pType = ['rock','paper','scissors'].includes(myCard.type) ? myCard.type : 'rock';
+  let cType = ['rock','paper','scissors'].includes(oppCard.type) ? oppCard.type : 'rock';
+  let pPow  = Math.max(myCard.power||0, 3);
+  const cPow  = Math.max(oppCard.power||0, 3);
+
+  // Run the special effect logic (mirrors solo's handleSpecialEffect)
+  if(myCard.effect){
+    const fakeOppCard = {...oppCard, type: cType};
+    const r = handleSpecialEffect(myCard, fakeOppCard, pType, cType, pPow, cPow);
+    pType = r.pType; cType = r.cType; pPow = r.pPow||pPow;
+    if(r.autoWin){ result.outcome='win'; result.effectName=myCard.name; }
+    else if(r.autoLose){ result.outcome='lose'; result.effectName=myCard.name; }
+    result.msg = r.msg||'';
+    // earlyReturn effects
+    if(r.earlyReturn){
+      if(r.outcome==='win'){ result.outcome='win'; result.oppDmg=r.dmgCpu||pPow; }
+      else if(r.outcome==='lose'){ result.outcome='lose'; result.myDmg=r.dmgPlayer||cPow; }
+      if(r.healPlayer){ result.myHeal=r.healPlayer; result.outcome='draw'; }
+      if(r.dmgCpu) result.oppDmg=r.dmgCpu;
+      _mpFinaliseResult(result, pPow, cPow);
+      return result;
+    }
+    // special solo-only effects
+    if(['healS','healL'].includes(myCard.effect)){
+      result.myHeal = myCard.effect==='healS' ? 3 : 5;
+      result.msg = myCard.effect==='healS' ? 'Fortify: +3 HP!' : 'Mend: +5 HP!';
+      result.outcome='draw';
+      return result;
+    }
+    if(myCard.effect==='drawExtra'){ result.myDrawCards=2; result.msg='Swift Cut: Drew 2!'; result.outcome='draw'; return result; }
+    if(myCard.effect==='steal'){ result.msg='Steal: +2 gold!'; result.outcome='draw'; return result; }
+    if(myCard.effect==='inkFlood'){ result.oppDmg=5; result.msg='Ink Flood: 5 flat damage!'; result.outcome='win'; return result; }
+    if(myCard.effect==='scramble'){ result.myDrawCards=1; result.msg='Scramble: Reshuffled & drew 1!'; result.outcome='draw'; return result; }
+    if(myCard.effect==='adaptation'){ result.myDrawCards=0; result.msg='Adaptation: +1 power on a card.'; result.outcome='draw'; return result; }
+  }
+
+  // Resolve if not already set
+  if(result.outcome==='draw' && !myCard.effect){
+    result.outcome = rpsResolve(pType, cType, pPow, cPow);
+  } else if(result.outcome==='draw' && myCard.effect){
+    // effect ran but didn't set outcome — resolve normally
+    const o = rpsResolve(pType, cType, pPow, cPow);
+    result.outcome = o;
+  }
+
+  _mpFinaliseResult(result, pPow, cPow);
+  return result;
+}
+
+function _mpFinaliseResult(result, pPow, cPow){
+  if(result.outcome==='win' && result.oppDmg===0) result.oppDmg = pPow;
+  if(result.outcome==='lose' && result.myDmg===0)  result.myDmg  = cPow;
+  if(!result.msg){
+    if(result.outcome==='win') result.msg=`You win! -${result.oppDmg} HP`;
+    else if(result.outcome==='lose') result.msg=`You lose! -${result.myDmg} HP`;
+    else result.msg='Draw!';
+  }
+}
+
+// Flip a result so it's from the other player's perspective
+function mpMirrorResult(r){
+  return {
+    outcome: r.outcome==='win'?'lose': r.outcome==='lose'?'win':'draw',
+    myDmg:   r.oppDmg,
+    oppDmg:  r.myDmg,
+    myHeal:  0,   // heals are local
+    myDrawCards: 0,
+    msg: r.msg,
+    effectName: r.effectName,
+  };
+}
+
+// Apply a result to local MP state
+function mpApplyResult(result, isUs){
+  if(result.myHeal)  MP.myHP  = Math.min(MP.myMaxHP, MP.myHP+result.myHeal);
+  if(result.myDmg)   MP.myHP  = Math.max(0, MP.myHP-result.myDmg);
+  if(result.oppDmg)  MP.oppHP = Math.max(0, MP.oppHP-result.oppDmg);
+  if(result.myDrawCards>0){ mpDrawCards(result.myDrawCards); mpRenderHand(); }
+  mpUpdateHeader();
+}
+
+async function mpShowRoundResult(result, myCard, oppCard){
   const ra=document.getElementById('mp-result-area');
-  if(outcome==='win'){
-    dmg=pPow; MP.oppHP=Math.max(0,MP.oppHP-dmg);
-    mpSetLog(`Your ${pCard.name} beats ${cCard.name}! -${dmg} HP`);
-    ra.innerHTML=`<div style="font-family:'Cinzel',serif;color:var(--scissors-l);font-size:1.1rem;font-weight:700;padding:.3rem;">WIN! -${dmg} HP</div>`;
+  const ps=document.getElementById('mp-p-slot');
+  const cs=document.getElementById('mp-opp-slot');
+  if(result.outcome==='win'){
+    ra.innerHTML=`<div style="font-family:'Cinzel',serif;color:var(--scissors-l);font-size:1.1rem;font-weight:700;padding:.3rem;">WIN! -${result.oppDmg} HP</div>`;
     if(ps) ps.style.boxShadow='0 0 18px rgba(88,214,141,.4)';
-  } else if(outcome==='lose'){
-    dmg=cPow; MP.myHP=Math.max(0,MP.myHP-dmg);
-    mpSetLog(`${cCard.name} beats your ${pCard.name}! -${dmg} HP`);
-    ra.innerHTML=`<div style="font-family:'Cinzel',serif;color:var(--rock-l);font-size:1.1rem;font-weight:700;padding:.3rem;">LOSS -${dmg} HP</div>`;
+  } else if(result.outcome==='lose'){
+    ra.innerHTML=`<div style="font-family:'Cinzel',serif;color:var(--rock-l);font-size:1.1rem;font-weight:700;padding:.3rem;">LOSS -${result.myDmg} HP</div>`;
     if(cs) cs.style.boxShadow='0 0 18px rgba(231,76,60,.4)';
   } else {
-    mpSetLog(`Draw! ${pCard.name} vs ${cCard.name}`);
     ra.innerHTML=`<div style="font-family:'Cinzel',serif;color:var(--gold);font-size:1.1rem;font-weight:700;padding:.3rem;">DRAW</div>`;
   }
-  mpUpdateHeader();
-  await mpDelay(2000);
-
+  const logLine = result.msg || (result.outcome==='win'?`Your ${myCard.name} beats ${oppCard.name}!`:`${oppCard.name} beats your ${myCard.name}!`);
+  mpSetLog(logLine);
+  // Show effect name badge if special
+  if(result.effectName){
+    const badge=document.createElement('div');
+    badge.style.cssText='font-size:.72rem;color:var(--special-l);text-align:center;margin-top:.2rem;font-style:italic;';
+    badge.textContent='✦ '+result.effectName;
+    ra.appendChild(badge);
+  }
+  await mpDelay(2200);
   if(ps) ps.style.boxShadow='';
   if(cs) cs.style.boxShadow='';
+}
 
-  // Check game over
+function mpAfterRound(){
+  const ra=document.getElementById('mp-result-area');
+  const ps=document.getElementById('mp-p-slot');
+  const cs=document.getElementById('mp-opp-slot');
   if(MP.myHP<=0){ mpShowGameOver('You were defeated!', false); return; }
   if(MP.oppHP<=0){ mpShowGameOver('You win the duel!', true); return; }
-
-  // Reset for next round
   MP.round++;
   MP.myLockedCard=null;
   MP.oppLockedCard=null;
   MP._selectedIdx=null;
   MP.phase='idle';
-  ra.innerHTML='';
+  if(ra) ra.innerHTML='';
   if(ps){ ps.innerHTML='Your Card'; ps.className='slot'; }
   if(cs){ cs.innerHTML='Opponent'; cs.className='slot'; }
   document.getElementById('mp-round-badge').textContent='Round '+MP.round;
-  // Replenish hand
   if(MP.myHand.length<3) mpDrawCards(3-MP.myHand.length);
-  // Update face-down opp hand (decrement by 1 since they played one, then refill toward 5)
   MP.oppHandCount=Math.max(3,MP.oppHandCount-1);
   mpRenderOppHand(MP.oppHandCount);
   mpRenderHand();
