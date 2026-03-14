@@ -472,7 +472,7 @@ html,body{background:var(--bg);color:var(--t1);font-family:'Crimson Text',serif;
           </button>
         </div>
         <button class="btn primary" id="start-btn" onclick="startGame()" disabled>Begin Run</button>
-        <button class="btn" onclick="showScreen('mp-lobby-screen')" style="margin-top:-.2rem;">⚔ Play vs Friend</button>
+        <button class="btn" onclick="openMpLobby()" style="margin-top:-.2rem;">⚔ Play vs Friend</button>
       </div>
     </div>
     <div class="tab-content" id="tab-collection">
@@ -629,7 +629,7 @@ html,body{background:var(--bg);color:var(--t1);font-family:'Crimson Text',serif;
         <option value="5">5 cards per hand</option>
         <option value="7">7 cards per hand</option>
       </select>
-      <button class="btn primary" id="mp-host-btn" onclick="mpHost()" disabled>Generate Room Code</button>
+      <button class="btn primary" id="mp-host-btn" onclick="mpHostWithCode()" disabled>Generate Room Code</button>
       <div id="mp-host-code-area" style="display:none;text-align:center;">
         <div class="mp-room-code" id="mp-host-code">—</div>
         <div style="font-size:.72rem;color:var(--t3);margin-top:.3rem;">Share this code with your friend</div>
@@ -3422,13 +3422,30 @@ function openMpLobby(){
   mpPopulateDeckSelects();
   showScreen('mp-lobby-screen');
   mpSetConnDot('waiting');
+  // Disable buttons until peer is ready
+  const hb=document.getElementById('mp-host-btn');
+  const jb=document.getElementById('mp-join-btn');
+  if(hb) hb.disabled=true;
+  if(jb) jb.disabled=true;
   loadPeerJS(()=>{
-    if(MP.peer&&!MP.peer.destroyed) { mpSetConnDot('online'); mpEnableBtns(); return; }
-    const peer=new Peer(undefined,{debug:0});
-    MP.peer=peer;
-    peer.on('open',()=>{ mpSetConnDot('online'); mpEnableBtns(); });
-    peer.on('error',(e)=>{ mpSetConnDot('offline'); mpSetStatus('peer',e.type==='unavailable-id'?'Code taken — try again':('Error: '+e.type),true); });
-    peer.on('disconnected',()=>{ mpSetConnDot('offline'); peer.reconnect(); });
+    if(MP.peer&&!MP.peer.destroyed){ mpSetConnDot('online'); mpEnableBtns(); return; }
+    try {
+      const peer=new Peer(undefined,{debug:0});
+      MP.peer=peer;
+      peer.on('open',()=>{ mpSetConnDot('online'); mpEnableBtns(); });
+      peer.on('error',(e)=>{
+        mpSetConnDot('offline');
+        const msg=e.type==='unavailable-id'?'Code taken — try again':
+                  e.type==='network'?'Network error — check your connection':
+                  'Relay error: '+e.type;
+        const cl=document.getElementById('mp-conn-label');
+        if(cl){ cl.textContent=msg; cl.style.color='var(--rock-l)'; }
+      });
+      peer.on('disconnected',()=>{ mpSetConnDot('offline'); try{ peer.reconnect(); }catch{} });
+    } catch(err) {
+      const cl=document.getElementById('mp-conn-label');
+      if(cl){ cl.textContent='Failed to init: '+err.message; cl.style.color='var(--rock-l)'; }
+    }
   });
 }
 
@@ -3481,35 +3498,29 @@ function mpJoin(){
 // Solution: when hosting we set a custom peer ID that IS the code (4 uppercase letters).
 // Re-init peer with custom ID on host.
 function mpHostWithCode(){
-  if(!MP.peer||MP.peer.destroyed){ mpSetStatus('host','Not connected to relay yet.',true); return; }
-  MP.peer.destroy();
+  if(!window.Peer){ mpSetStatus('host','PeerJS still loading — wait a moment then try again.',true); return; }
+  if(MP.peer&&!MP.peer.destroyed){ try{ MP.peer.destroy(); }catch{} }
   MP.peer=null;
   const code=_mpGenCode();
-  loadPeerJS(()=>{
-    const peer=new Peer('SSP-'+code,{debug:0});
-    MP.peer=peer;
-    peer.on('open',id=>{
-      document.getElementById('mp-host-code').textContent=code;
-      document.getElementById('mp-host-code-area').style.display='block';
-      mpSetStatus('host','Waiting for opponent…');
-      MP.isHost=true;
-      MP.deckId=document.getElementById('mp-deck-select').value;
-      MP.handSize=parseInt(document.getElementById('mp-hand-select').value)||5;
-      peer.on('connection',conn=>mpOnConnection(conn));
-    });
-    peer.on('error',e=>{
-      // ID taken — try again with different code
-      if(e.type==='unavailable-id') mpHostWithCode();
-      else mpSetStatus('host','Error: '+e.type,true);
-    });
+  const peer=new Peer('SSP-'+code,{debug:0});
+  MP.peer=peer;
+  peer.on('open',()=>{
+    document.getElementById('mp-host-code').textContent=code;
+    document.getElementById('mp-host-code-area').style.display='block';
+    mpSetStatus('host','Waiting for opponent to join…');
+    MP.isHost=true;
+    MP.deckId=document.getElementById('mp-deck-select').value;
+    MP.handSize=parseInt(document.getElementById('mp-hand-select').value)||5;
+    peer.on('connection',conn=>mpOnConnection(conn));
+  });
+  peer.on('error',e=>{
+    if(e.type==='unavailable-id') mpHostWithCode();
+    else mpSetStatus('host','Error: '+e.type,true);
   });
 }
 
 // Override the host button to use fixed-ID approach
-document.addEventListener('DOMContentLoaded',()=>{
-  const hb=document.getElementById('mp-host-btn');
-  if(hb) hb.onclick=mpHostWithCode;
-});
+// mpHostWithCode is called directly from the button onclick
 
 function _mpGenCode(){
   const chars='ABCDEFGHJKLMNPQRSTUVWXYZ';
@@ -3780,11 +3791,7 @@ function mpUpdateHeader(){
 function mpSetLog(msg){ const el=document.getElementById('mp-log'); if(el) el.textContent=msg; }
 function mpDelay(ms){ return new Promise(r=>setTimeout(r,ms)); }
 
-// Patch lobby screen button to use openMpLobby
-document.addEventListener('DOMContentLoaded',()=>{
-  const mpBtn=document.querySelector('button[onclick="showScreen(\'mp-lobby-screen\')"]');
-  if(mpBtn){ mpBtn.onclick=openMpLobby; }
-});
+// Patch lobby screen button to use openMpLobby — now wired directly in HTML
 
 window.ssp = ssp;
 console.log('%c⚖ Stone Scissors Paper — type ssp.help() for dev commands','color:#f39c12;font-weight:bold;font-size:12px;');
