@@ -3420,7 +3420,7 @@ function mpSetConnDot(state){ // 'waiting' | 'online' | 'offline'
 // Called when multiplayer button is clicked — lazy-load PeerJS and init peer
 function openMpLobby(){
   mpPopulateDeckSelects();
-  showScreen('mp-lobby-screen');
+  showScreen('mp-lobby');
   mpSetConnDot('waiting');
   // Disable buttons until peer is ready
   const hb=document.getElementById('mp-host-btn');
@@ -3594,7 +3594,7 @@ function mpStartBattle(){
   MP.myHand=[];
   MP.myLockedCard=null; MP.oppLockedCard=null;
   MP.phase='idle';
-  showScreen('mp-battle-screen');
+  showScreen('mp-battle');
   document.getElementById('mp-opp-name').textContent=MP.oppName;
   _mpHelloSent=false; _mpHelloBuffer.received=false;
   mpDrawCards(MP.handSize||5);
