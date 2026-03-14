@@ -699,6 +699,12 @@ html,body{background:var(--bg);color:var(--t1);font-family:'Crimson Text',serif;
   <!-- Player zone -->
   <div class="p-zone" style="flex:1;">
     <div class="zone-label">Your Hand</div>
+    <!-- Buff slot row -->
+    <div style="display:flex;align-items:center;gap:.4rem;font-size:.68rem;color:var(--t3);margin-bottom:.2rem;flex-wrap:wrap;justify-content:center;">
+      <span class="buff-slot-label">BUFF SLOT (1/round):</span>
+      <div id="mp-buff-hand" class="buff-row"></div>
+      <button class="btn xs info" id="mp-use-buff-btn" onclick="mpUseBuff()" disabled style="display:none;">Use Buff</button>
+    </div>
     <div class="p-hand" id="mp-p-hand"></div>
     <div class="action-row">
       <button class="btn sm primary" id="mp-play-btn" onclick="mpPlayCard()" disabled>Lock In Card</button>
@@ -3459,13 +3465,19 @@ function _mpMakePeer(customId, onOpen, onError){
 const MP = {
   peer:null, conn:null,
   isHost:false,
-  myDeck:[], myHand:[], myHP:20, myMaxHP:20,
+  myDeck:[], myHand:[], myBuffHand:[],
+  myHP:20, myMaxHP:20,
   oppHP:20, oppMaxHP:20,
   myLockedCard:null, oppLockedCard:null,
+  myActiveBuff:null, oppActiveBuff:null,
+  buffUsedThisRound:false,
+  _selectedIdx:null, _selectedBuffUid:null,
   round:1, handSize:5,
   myName:'Player', oppName:'Opponent',
-  phase:'idle',   // idle | waiting-for-opp | revealing | gameover
+  phase:'idle',
   deckId:null,
+  oppHandCount:5,
+  _interactiveResolve:null,
 };
 
 // ── Lobby UI helpers ──
@@ -3735,6 +3747,7 @@ async function mpOnData(data){
       break;
     case 'card-locked':
       MP.oppLockedCard=data.card;
+      MP.oppActiveBuff=data.buff||null;
       const cs=document.getElementById('mp-opp-slot');
       if(cs){
         cs.innerHTML='<div class="card-back" style="width:100%;height:100%;border-radius:8px;display:flex;align-items:center;justify-content:center;"><div style="font-size:1.4rem;opacity:.5;">🂠</div></div>';
@@ -3744,7 +3757,8 @@ async function mpOnData(data){
       if(!MP.myLockedCard) mpStartTimer();
       _mpMaybeReveal();
       break;
-    case 'draw-request':
+    case 'buff-used':
+      mpSetLog(`${MP.oppName} activated a buff card.`);
       break;
     case 'rematch':
       mpStartBattle();
@@ -3895,13 +3909,12 @@ async function mpRunInteractive(effect, iAmCaster, myCard, oppCard){
   return result;
 }
 
-// Non-caster receives interactive-start
+// Non-caster receives interactive-start — handles all effect types
 function mpHandleInteractiveAsOpponent(effect, casterName){
   switch(effect){
     case 'jester-wait':
       mpSetLog(`🃏 ${casterName} is flipping the coin…`); break;
     case 'triple-mind-pick':
-      // Show pick UI — send pick back
       mpShowPickUI('🧠 Triple Mind Game',`${casterName} is guessing your pick. Choose:`).then(pick=>{
         mpSend({type:'interactive-pick',pick});
         mpSetLog(`You picked ${pick} — waiting for ${casterName}'s guess…`);
@@ -3912,6 +3925,8 @@ function mpHandleInteractiveAsOpponent(effect, casterName){
     case 'trial-pick':
       mpRunMpTrialOpponent().then(()=>{});
       break;
+    case 'trial-pick-one':
+      mpHandleTrialOppPick(); break;
   }
 }
 
@@ -4127,14 +4142,6 @@ function _mpTrialOppPick(pick){
   mpSend({type:'interactive-pick', pick});
 }
 
-// ── TRIAL-PICK-ONE HANDLER FOR OPPONENT ──
-// Extend mpHandleInteractiveAsOpponent for trial-pick-one
-const _origMpHandleInteractive = mpHandleInteractiveAsOpponent;
-function mpHandleInteractiveAsOpponent(effect, casterName){
-  if(effect==='trial-pick-one'){ mpHandleTrialOppPick(); return; }
-  _origMpHandleInteractive(effect, casterName);
-}
-
 // ── BATTLE SETUP ──
 function mpStartBattle(){
   mpStopTimer();
@@ -4145,9 +4152,11 @@ function mpStartBattle(){
   const deckDef=DECK_DEFS[MP.deckId];
   if(!deckDef){ mpSetStatus('host','Unknown deck.',true); return; }
   MP.myDeck=shuffle(deckDef.cards.map(makeCard));
-  MP.myHand=[];
+  MP.myHand=[]; MP.myBuffHand=[];
   MP.myLockedCard=null; MP.oppLockedCard=null;
-  MP._selectedIdx=null;
+  MP.myActiveBuff=null; MP.oppActiveBuff=null;
+  MP.buffUsedThisRound=false;
+  MP._selectedIdx=null; MP._selectedBuffUid=null;
   MP.phase='idle';
   _mpHelloBuffer.sent=false;
   _mpHelloBuffer.received=false;
@@ -4158,7 +4167,7 @@ function mpStartBattle(){
   mpUpdateHeader();
   mpRenderOppHand(MP.oppHandCount);
   mpSetLog('Round 1 — choose your card and lock it in!');
-  mpRenderHand();
+  mpRenderHand(); mpRenderBuffHand();
   document.getElementById('mp-play-btn').disabled=true;
   document.getElementById('mp-draw-btn').disabled=false;
   const ps=document.getElementById('mp-p-slot');
@@ -4172,23 +4181,27 @@ function mpStartBattle(){
 function mpDrawCards(n=1){
   for(let i=0;i<n;i++){
     if(MP.myDeck.length===0){
-      // Reshuffle discard or refill from deck template
       const deckDef=DECK_DEFS[MP.deckId];
       if(deckDef) MP.myDeck=shuffle(deckDef.cards.map(makeCard));
     }
     if(MP.myDeck.length===0) break;
-    if(MP.myHand.length>=7) break;
-    // Only take non-buff cards for mp (simplified)
+    if(MP.myHand.length>=7 && MP.myBuffHand.length>=4) break;
     const card=MP.myDeck.shift();
-    if(card&&!card.isbuff) MP.myHand.push(card);
-    else if(card) MP.myDeck.push(card); // put buffs back
+    if(!card) break;
+    if(card.isbuff||card.type==='buff'){
+      if(MP.myBuffHand.length<4) MP.myBuffHand.push(card);
+      else MP.myDeck.push(card);
+    } else {
+      if(MP.myHand.length<7) MP.myHand.push(card);
+      else MP.myDeck.push(card);
+    }
   }
 }
 
 function mpDrawCard(){
-  if(MP.myHand.length>=7){ mpSetLog('Hand full!'); return; }
+  if(MP.myHand.length>=7 && MP.myBuffHand.length>=4){ mpSetLog('Hand full!'); return; }
   mpDrawCards(1);
-  mpRenderHand();
+  mpRenderHand(); mpRenderBuffHand();
   mpSend({type:'draw-request'});
 }
 
@@ -4202,6 +4215,50 @@ function mpRenderHand(){
     if(MP._selectedIdx===i) el.classList.add('selected');
     hand.appendChild(el);
   });
+}
+
+function mpRenderBuffHand(){
+  const hand=document.getElementById('mp-buff-hand');
+  if(!hand) return;
+  hand.innerHTML='';
+  const btn=document.getElementById('mp-use-buff-btn');
+  if(MP.myBuffHand.length===0){
+    if(btn) btn.style.display='none';
+    return;
+  }
+  if(btn) btn.style.display='inline-block';
+  MP.myBuffHand.forEach(card=>{
+    const div=document.createElement('div');
+    div.className='buff-card'+(MP._selectedBuffUid===card.uid?' selected':'')+(MP.buffUsedThisRound?' used':'');
+    div.innerHTML=`<span style="font-size:1rem;">${card.icon}</span><div style="font-size:.55rem;color:var(--t2);text-align:center;line-height:1.2;">${card.name}</div>`;
+    div.title=card.ability||card.name;
+    if(!MP.buffUsedThisRound&&!MP.myLockedCard){
+      div.onclick=()=>mpSelectBuff(card.uid);
+    }
+    hand.appendChild(div);
+  });
+  if(btn) btn.disabled=MP.buffUsedThisRound||!MP._selectedBuffUid||!!MP.myLockedCard;
+}
+
+function mpSelectBuff(uid){
+  if(MP.buffUsedThisRound||MP.myLockedCard) return;
+  MP._selectedBuffUid=(MP._selectedBuffUid===uid)?null:uid;
+  MP._selectedIdx=null; // deselect play card
+  mpRenderHand(); mpRenderBuffHand();
+}
+
+function mpUseBuff(){
+  if(MP.buffUsedThisRound||!MP._selectedBuffUid||MP.myLockedCard) return;
+  const buffIdx=MP.myBuffHand.findIndex(c=>c.uid===MP._selectedBuffUid);
+  if(buffIdx<0) return;
+  const buff=MP.myBuffHand[buffIdx];
+  MP.myActiveBuff=buff;
+  MP.buffUsedThisRound=true;
+  MP._selectedBuffUid=null;
+  mpSetLog(`Buff activated: ${buff.name} — ${buff.ability||''}`);
+  mpRenderBuffHand();
+  // Notify opponent that we used a buff (they don't see which one)
+  mpSend({type:'buff-used', buffName:buff.name});
 }
 
 function mpSelectCard(idx){
@@ -4230,6 +4287,7 @@ function mpPlayCard(){
   MP._selectedIdx=null;
   document.getElementById('mp-play-btn').disabled=true;
   document.getElementById('mp-draw-btn').disabled=true;
+  mpRenderBuffHand(); // disable buff button once locked
   // Show card in the VS slot (face down to opponent, but visible to us)
   const ps=document.getElementById('mp-p-slot');
   if(ps){
@@ -4238,7 +4296,10 @@ function mpPlayCard(){
   }
   mpSetLog('Card locked in — waiting for opponent…');
   mpRenderHand();
-  mpSend({type:'card-locked', card:{id:card.id,name:card.name,icon:card.icon,type:card.type,power:card.power,rarity:card.rarity,effect:card.effect}});
+  mpSend({type:'card-locked',
+    card:{id:card.id,name:card.name,icon:card.icon,type:card.type,power:card.power,rarity:card.rarity,effect:card.effect},
+    buff: MP.myActiveBuff ? {effect:MP.myActiveBuff.effect,name:MP.myActiveBuff.name} : null
+  });
   // Start timer for opponent if they haven't locked yet
   if(!MP.oppLockedCard) mpStartTimer();
   _mpMaybeReveal();
@@ -4314,9 +4375,28 @@ function mpResolveEffect(myCard, oppCard){
   let cType = ['rock','paper','scissors'].includes(oppCard.type) ? oppCard.type : 'rock';
   let pPow  = Math.max(myCard.power||0, 3);
   const cPow  = Math.max(oppCard.power||0, 3);
+  let autoWin=false, autoLose=false;
+
+  // ── Apply MY active buff (same logic as solo resolveCards buff section) ──
+  const myBuff = MP.myActiveBuff;
+  if(myBuff){
+    const buffId=myBuff.effect;
+    if(buffId==='shatterRock' && pType==='rock' && cType==='paper'){ autoWin=true; pPow=6; result.msg='Shatter Rock: Rock shatters through Paper!'; }
+    if(buffId==='shearForce'  && pType==='scissors'){ autoWin=true; pPow=Math.max(pPow,5); result.msg='Shear Force: Scissors tears through everything!'; }
+    if(buffId==='foldingTech' && pType==='paper' && cType==='scissors'){ autoWin=true; pPow=Math.max(pPow,5); result.msg='Folding Tech: Paper folds Scissors flat!'; }
+    if(buffId==='mirrorTrap'  && MP.oppActiveBuff===null){ /* no last type in MP, skip */ }
+    if(buffId==='doubleDown')  result._doubleDown=true;
+    if(buffId==='paperShield' && pType==='paper') result._paperShield=true;
+    if(buffId==='practiceCut' && pType==='scissors') result._practiceCut=true;
+    if(buffId==='reinforcedPaper') { /* simplified — skip streak tracking in MP */ }
+    if(buffId==='trapSetup')  { /* simplified — no last-type tracking in MP yet */ }
+    if(buffId==='forcedChoice'){ cType=rand(['rock','paper','scissors']); result.msg+=` Forced Choice: Opponent plays ${cType}!`; }
+    if(buffId==='foldingStrat') result._foldingStrat=true; // draw 2 on paper win
+    if(buffId==='chainReaction') result._chainReaction=true;
+  }
 
   // Run the special effect logic (mirrors solo's handleSpecialEffect)
-  if(myCard.effect){
+  if(myCard.effect && !autoWin && !autoLose){
     const fakeOppCard = {...oppCard, type: cType};
     const r = handleSpecialEffect(myCard, fakeOppCard, pType, cType, pPow, cPow);
     pType = r.pType; cType = r.cType; pPow = r.pPow||pPow;
@@ -4347,15 +4427,32 @@ function mpResolveEffect(myCard, oppCard){
   }
 
   // Resolve if not already set
-  if(result.outcome==='draw' && !myCard.effect){
-    result.outcome = rpsResolve(pType, cType, pPow, cPow);
-  } else if(result.outcome==='draw' && myCard.effect){
-    // effect ran but didn't set outcome — resolve normally
-    const o = rpsResolve(pType, cType, pPow, cPow);
-    result.outcome = o;
+  if(!autoWin && !autoLose){
+    if(result.outcome==='draw' && !myCard.effect){
+      result.outcome = rpsResolve(pType, cType, pPow, cPow);
+    } else if(result.outcome==='draw' && myCard.effect){
+      const o = rpsResolve(pType, cType, pPow, cPow);
+      result.outcome = o;
+    }
   }
+  if(autoWin) result.outcome='win';
+  if(autoLose) result.outcome='lose';
+
+  // Practice Cut: scissors wins ties
+  if(result._practiceCut && result.outcome==='draw' && pType==='scissors') result.outcome='win';
+  // Paper Shield: paper loss becomes draw
+  if(result._paperShield && result.outcome==='lose' && pType==='paper') result.outcome='draw';
 
   _mpFinaliseResult(result, pPow, cPow);
+
+  // Double Down: double damage on win, double taken on lose
+  if(result._doubleDown){
+    if(result.outcome==='win'){ result.oppDmg*=2; result.msg+=' Double Down: double damage!'; }
+    else if(result.outcome==='lose'){ result.myDmg*=2; result.msg+=' Double Down: double penalty!'; }
+  }
+  // Folding Strategy: draw 2 on paper win
+  if(result._foldingStrat && result.outcome==='win' && pType==='paper') result.myDrawCards+=2;
+
   return result;
 }
 
@@ -4428,6 +4525,8 @@ function mpAfterRound(){
   MP.myLockedCard=null;
   MP.oppLockedCard=null;
   MP._selectedIdx=null;
+  MP.myActiveBuff=null; MP.oppActiveBuff=null;
+  MP.buffUsedThisRound=false; MP._selectedBuffUid=null;
   MP.phase='idle';
   if(ra) ra.innerHTML='';
   if(ps){ ps.innerHTML='Your Card'; ps.className='slot'; }
@@ -4436,7 +4535,7 @@ function mpAfterRound(){
   if(MP.myHand.length<3) mpDrawCards(3-MP.myHand.length);
   MP.oppHandCount=Math.max(3,MP.oppHandCount-1);
   mpRenderOppHand(MP.oppHandCount);
-  mpRenderHand();
+  mpRenderHand(); mpRenderBuffHand();
   document.getElementById('mp-draw-btn').disabled=false;
   document.getElementById('mp-play-btn').disabled=true;
   mpSetLog('Round '+MP.round+' — choose your card!');
