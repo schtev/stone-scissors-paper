@@ -3635,15 +3635,24 @@ function _mpFindPeerId(code){ return 'SSP-'+code.toUpperCase(); }
 // ── CONNECTION HANDLER (both host and joiner call this) ──
 function mpOnConnection(conn){
   MP.conn=conn;
+  // Reset handshake state for fresh connection
+  _mpHelloBuffer.received=false;
+  _mpHelloBuffer.sent=false;
+
   conn.on('open',()=>{
-    mpSetStatus('host','Opponent connected! Starting…');
-    mpSetStatus('join','Connected! Starting…');
-    // Exchange deck selections + start the game after a brief delay
+    // Send our hello
     mpSend({type:'hello', deckId:MP.deckId, name:DECK_DEFS[MP.deckId]?.name||'Player', handSize:MP.handSize||5});
+    _mpHelloBuffer.sent=true;
+    // Update status — don't start yet, wait for opponent's hello
+    if(MP.isHost){
+      mpSetStatus('host','Opponent connected! Waiting for handshake…');
+    } else {
+      mpSetStatus('join','Connected! Waiting for host…');
+    }
   });
-  conn.on('data',mpOnData);
-  conn.on('close',()=>{ mpSetStatus('host','Opponent disconnected.',true); mpOnDisconnect(); });
-  conn.on('error',(e)=>{ mpSetStatus('host','Connection error.',true); console.warn('MP conn error',e); });
+  conn.on('data', mpOnData);
+  conn.on('close',()=>{ mpOnDisconnect(); });
+  conn.on('error',(e)=>{ console.warn('MP conn error',e); });
 }
 
 function mpSend(data){
@@ -3651,7 +3660,14 @@ function mpSend(data){
 }
 
 // ── DATA HANDLER ──
-const _mpHelloBuffer = {};
+const _mpHelloBuffer = {sent:false, received:false, oppDeckId:null, oppHandSize:5};
+
+function _mpMaybeStart(){
+  if(_mpHelloBuffer.received){
+    mpStartBattle();
+  }
+}
+
 function mpOnData(data){
   switch(data.type){
     case 'hello':
@@ -3681,7 +3697,7 @@ function mpOnData(data){
   }
 }
 
-let _mpHelloSent=false;
+
 function _mpMaybeStart(){
   if(!_mpHelloSent){ _mpHelloSent=true; }
   if(_mpHelloBuffer.received){ mpStartBattle(); }
@@ -3700,7 +3716,8 @@ function mpStartBattle(){
   MP.phase='idle';
   showScreen('mp-battle');
   document.getElementById('mp-opp-name').textContent=MP.oppName;
-  _mpHelloSent=false; _mpHelloBuffer.received=false;
+  _mpHelloBuffer.sent=false;
+  _mpHelloBuffer.received=false;
   mpDrawCards(MP.handSize||5);
   mpUpdateHeader();
   mpSetLog('Round 1 — choose your card and lock it in!');
