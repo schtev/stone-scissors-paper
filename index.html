@@ -656,44 +656,50 @@ html,body{background:var(--bg);color:var(--t1);font-family:'Crimson Text',serif;
 
 <!-- ══ MP BATTLE SCREEN ══ -->
 <div id="mp-battle-screen" class="screen">
-  <!-- Header -->
+  <!-- Header — mirrors solo b-header -->
   <div class="b-header">
     <div class="r-badge" id="mp-round-badge">Round 1</div>
-    <div class="mp-hp-block">
-      <div class="mp-hp-name">YOU <span id="mp-p-hp-txt">20/20</span></div>
-      <div class="mp-hp-bar"><div class="mp-hp-fill" id="mp-p-hp-fill" style="width:100%;background:linear-gradient(90deg,var(--scissors-d),var(--scissors-l))"></div></div>
+    <div class="hp-wrap">
+      <div class="hp-label"><span>YOU</span><span id="mp-p-hp-txt">20/20</span></div>
+      <div class="hp-bar"><div class="hp-fill p" id="mp-p-hp-fill" style="width:100%"></div></div>
     </div>
     <div style="font-size:.9rem;opacity:.4;">VS</div>
-    <div class="mp-hp-block">
-      <div class="mp-hp-name"><span id="mp-opp-name">Opponent</span> <span id="mp-c-hp-txt">20/20</span></div>
-      <div class="mp-hp-bar"><div class="mp-hp-fill" id="mp-c-hp-fill" style="width:100%;background:linear-gradient(90deg,var(--rock-d),var(--rock-l))"></div></div>
+    <div class="hp-wrap">
+      <div class="hp-label"><span id="mp-opp-name">Opponent</span><span id="mp-c-hp-txt">20/20</span></div>
+      <div class="hp-bar"><div class="hp-fill c" id="mp-c-hp-fill" style="width:100%"></div></div>
     </div>
-    <button class="btn xs danger" onclick="mpQuit()" style="margin-left:auto;">Quit</button>
+    <button class="btn xs info" onclick="showMpCollection()" style="margin-left:auto;">Collection</button>
+    <button class="btn xs danger" onclick="mpQuit()">Quit</button>
   </div>
 
-  <!-- Opponent's played card slot (face down until reveal) -->
-  <div style="display:flex;flex-direction:column;align-items:center;padding:.5rem .5rem 0;">
-    <div class="mp-player-label" id="mp-opp-zone-label">Opponent's card</div>
-    <div class="mp-slot" id="mp-opp-slot">Waiting…</div>
+  <!-- Opponent's face-down hand (like CPU hand in solo) -->
+  <div class="cpu-zone">
+    <div class="zone-label">
+      <span id="mp-opp-zone-label">Opponent's Hand</span>
+      <!-- Timer badge shown when opponent has locked in -->
+      <span id="mp-timer-badge" style="display:none;font-size:.7rem;background:rgba(192,57,43,.2);border:1px solid var(--rock);border-radius:4px;padding:1px 8px;color:var(--rock-l);font-family:'Cinzel',serif;margin-left:.4rem;"></span>
+    </div>
+    <!-- Row of face-down card backs representing opponent's hand size -->
+    <div id="mp-opp-hand" style="display:flex;gap:.35rem;flex-wrap:wrap;justify-content:center;"></div>
   </div>
 
-  <!-- VS area -->
-  <div class="mp-vs-area">
-    <div style="text-align:center;">
-      <div class="mp-player-label">Your card</div>
-      <div class="mp-slot" id="mp-p-slot">Select below</div>
-    </div>
-    <div style="font-family:'Cinzel',serif;font-size:1.2rem;color:var(--gold);opacity:.6;">⚔</div>
-    <div style="text-align:center;" id="mp-result-area"></div>
+  <!-- VS field — same layout as solo -->
+  <div class="field" id="mp-battle-field">
+    <div class="slot" id="mp-p-slot">Your Card</div>
+    <div class="vs">⚔</div>
+    <div class="slot" id="mp-opp-slot">Opponent</div>
   </div>
+
+  <!-- Result area sits below field -->
+  <div id="mp-result-area" style="text-align:center;min-height:1.8rem;"></div>
 
   <!-- Log -->
-  <div class="mp-log" id="mp-log">Waiting for connection...</div>
+  <div class="log" id="mp-log">Waiting for connection...</div>
 
-  <!-- Player hand -->
+  <!-- Player zone -->
   <div class="p-zone" style="flex:1;">
     <div class="zone-label">Your Hand</div>
-    <div class="mp-hand" id="mp-p-hand"></div>
+    <div class="p-hand" id="mp-p-hand"></div>
     <div class="action-row">
       <button class="btn sm primary" id="mp-play-btn" onclick="mpPlayCard()" disabled>Lock In Card</button>
       <button class="btn sm" id="mp-draw-btn" onclick="mpDrawCard()" disabled>Draw Card</button>
@@ -3564,18 +3570,18 @@ function mpJoin(){
   const hostId=_mpFindPeerId(input);
 
   const doConnect=(peer)=>{
-    // Give the broker a moment to register the joiner's peer before connecting
     setTimeout(()=>{
       try{
         const conn=peer.connect(hostId,{reliable:true,serialization:'json'});
-        let opened=false;
+        // Register all handlers immediately — mpOnConnection attaches open/data/close listeners
+        mpOnConnection(conn);
+        // Timeout if open never fires
         const t=setTimeout(()=>{
-          if(!opened) mpSetStatus('join','⚠ Timed out — check the code and try again.',true);
-        },10000);
-        conn.on('open',()=>{ opened=true; clearTimeout(t); mpOnConnection(conn); });
-        conn.on('error',(e)=>{ clearTimeout(t); mpSetStatus('join','⚠ Could not connect: '+e.type,true); });
+          if(!_mpHelloBuffer.sent) mpSetStatus('join','⚠ Timed out — check the code and try again.',true);
+        }, 12000);
+        conn.on('open',()=>clearTimeout(t));
       } catch(e){ mpSetStatus('join','⚠ Connection failed: '+e.message,true); }
-    },400);
+    }, 200);
   };
 
   // Reuse existing peer if healthy, otherwise create a fresh one
@@ -3632,40 +3638,59 @@ function _mpGenCode(){
 }
 function _mpFindPeerId(code){ return 'SSP-'+code.toUpperCase(); }
 
-// ── CONNECTION HANDLER (both host and joiner call this) ──
+// ── CONNECTION HANDLER ──
 function mpOnConnection(conn){
   MP.conn=conn;
-  // Reset handshake state for fresh connection
   _mpHelloBuffer.received=false;
   _mpHelloBuffer.sent=false;
 
-  conn.on('open',()=>{
-    // Send our hello
-    mpSend({type:'hello', deckId:MP.deckId, name:DECK_DEFS[MP.deckId]?.name||'Player', handSize:MP.handSize||5});
-    _mpHelloBuffer.sent=true;
-    // Update status — don't start yet, wait for opponent's hello
-    if(MP.isHost){
-      mpSetStatus('host','Opponent connected! Waiting for handshake…');
-    } else {
-      mpSetStatus('join','Connected! Waiting for host…');
-    }
-  });
+  // Attach data listener IMMEDIATELY — before open fires — so we never miss a message
   conn.on('data', mpOnData);
-  conn.on('close',()=>{ mpOnDisconnect(); });
-  conn.on('error',(e)=>{ console.warn('MP conn error',e); });
+  conn.on('close', ()=>mpOnDisconnect());
+  conn.on('error', (e)=>console.warn('MP conn error', e));
+
+  conn.on('open', ()=>{
+    // Send hello directly on the conn (not via mpSend which guards on conn.open)
+    // Use a tiny delay so both sides are ready
+    setTimeout(()=>{
+      try {
+        conn.send({type:'hello',
+          deckId: MP.deckId,
+          name: DECK_DEFS[MP.deckId]?.name || 'Player',
+          handSize: MP.handSize || 5
+        });
+        _mpHelloBuffer.sent = true;
+      } catch(e){ console.warn('hello send failed', e); }
+    }, 100);
+
+    if(MP.isHost) mpSetStatus('host', 'Opponent connected! Exchanging info…');
+    else mpSetStatus('join', 'Connected! Exchanging info…');
+  });
 }
 
 function mpSend(data){
-  if(MP.conn&&MP.conn.open) MP.conn.send(data);
+  if(MP.conn && MP.conn.open){
+    try{ MP.conn.send(data); } catch(e){ console.warn('mpSend failed',e); }
+  }
 }
 
 // ── DATA HANDLER ──
 const _mpHelloBuffer = {sent:false, received:false, oppDeckId:null, oppHandSize:5};
 
 function _mpMaybeStart(){
-  if(_mpHelloBuffer.received){
-    mpStartBattle();
+  if(!_mpHelloBuffer.received) return;
+  // If we somehow haven't sent our hello yet, send it now as a reply
+  if(!_mpHelloBuffer.sent && MP.conn && MP.conn.open){
+    try{
+      MP.conn.send({type:'hello',
+        deckId: MP.deckId,
+        name: DECK_DEFS[MP.deckId]?.name || 'Player',
+        handSize: MP.handSize || 5
+      });
+      _mpHelloBuffer.sent=true;
+    }catch(e){}
   }
+  mpStartBattle();
 }
 
 function mpOnData(data){
@@ -3679,9 +3704,15 @@ function mpOnData(data){
       break;
     case 'card-locked':
       MP.oppLockedCard=data.card;
-      document.getElementById('mp-opp-slot').innerHTML='<span style="font-size:1.5rem">🔒</span><div style="font-size:.6rem;color:var(--gold);margin-top:4px">Locked in</div>';
-      document.getElementById('mp-opp-slot').classList.add('locked');
-      mpSetLog('Opponent locked in — waiting for your card…');
+      // Show a face-down card in the opponent's VS slot
+      const cs=document.getElementById('mp-opp-slot');
+      if(cs){
+        cs.innerHTML='<div class="card-back" style="width:100%;height:100%;border-radius:8px;display:flex;align-items:center;justify-content:center;"><div style="font-size:1.4rem;opacity:.5;">🂠</div></div>';
+        cs.className='slot filled';
+      }
+      mpSetLog('Opponent locked in — make your choice!');
+      // Start timer for us if we haven't locked yet
+      if(!MP.myLockedCard) mpStartTimer();
       _mpMaybeReveal();
       break;
     case 'draw-request':
@@ -3696,38 +3727,37 @@ function mpOnData(data){
       break;
   }
 }
-
-
-function _mpMaybeStart(){
-  if(!_mpHelloSent){ _mpHelloSent=true; }
-  if(_mpHelloBuffer.received){ mpStartBattle(); }
-}
-
 // ── BATTLE SETUP ──
 function mpStartBattle(){
+  mpStopTimer();
   MP.round=1;
   MP.myHP=20; MP.myMaxHP=20;
   MP.oppHP=20; MP.oppMaxHP=20;
+  MP.oppHandCount=5;
   const deckDef=DECK_DEFS[MP.deckId];
   if(!deckDef){ mpSetStatus('host','Unknown deck.',true); return; }
   MP.myDeck=shuffle(deckDef.cards.map(makeCard));
   MP.myHand=[];
   MP.myLockedCard=null; MP.oppLockedCard=null;
+  MP._selectedIdx=null;
   MP.phase='idle';
-  showScreen('mp-battle');
-  document.getElementById('mp-opp-name').textContent=MP.oppName;
   _mpHelloBuffer.sent=false;
   _mpHelloBuffer.received=false;
+  showScreen('mp-battle');
+  document.getElementById('mp-opp-name').textContent=MP.oppName;
+  document.getElementById('mp-round-badge').textContent='Round 1';
   mpDrawCards(MP.handSize||5);
   mpUpdateHeader();
+  mpRenderOppHand(MP.oppHandCount);
   mpSetLog('Round 1 — choose your card and lock it in!');
   mpRenderHand();
   document.getElementById('mp-play-btn').disabled=true;
   document.getElementById('mp-draw-btn').disabled=false;
-  document.getElementById('mp-p-slot').innerHTML='Select below';
-  document.getElementById('mp-p-slot').className='mp-slot';
-  document.getElementById('mp-opp-slot').innerHTML='Waiting…';
-  document.getElementById('mp-opp-slot').className='mp-slot';
+  const ps=document.getElementById('mp-p-slot');
+  const cs=document.getElementById('mp-opp-slot');
+  if(ps){ ps.innerHTML='Your Card'; ps.className='slot'; }
+  if(cs){ cs.innerHTML='Opponent'; cs.className='slot'; }
+  document.getElementById('mp-result-area').innerHTML='';
 }
 
 // ── HAND / DECK ──
@@ -3767,14 +3797,18 @@ function mpRenderHand(){
 }
 
 function mpSelectCard(idx){
+  if(MP.myLockedCard) return; // already locked
   MP._selectedIdx=idx;
   mpRenderHand();
   document.getElementById('mp-play-btn').disabled=false;
   const card=MP.myHand[idx];
   if(card){
     const ps=document.getElementById('mp-p-slot');
-    ps.innerHTML=`<span style="font-size:1.8rem">${card.icon}</span><div style="font-size:.65rem;color:var(--t2);margin-top:3px">${card.name}</div>`;
-    ps.className='mp-slot';
+    if(ps){
+      const preview=buildCardEl(card);
+      ps.innerHTML=preview.outerHTML;
+      ps.className='slot filled';
+    }
   }
 }
 
@@ -3788,13 +3822,17 @@ function mpPlayCard(){
   MP._selectedIdx=null;
   document.getElementById('mp-play-btn').disabled=true;
   document.getElementById('mp-draw-btn').disabled=true;
+  // Show card in the VS slot (face down to opponent, but visible to us)
   const ps=document.getElementById('mp-p-slot');
-  ps.innerHTML=`<span style="font-size:1.8rem">${card.icon}</span><div style="font-size:.62rem;color:var(--gold);margin-top:3px">Locked in</div>`;
-  ps.classList.add('locked');
-  mpSetLog('Card locked — waiting for opponent…');
+  if(ps){
+    ps.innerHTML=buildCardEl(card).outerHTML;
+    ps.className='slot filled';
+  }
+  mpSetLog('Card locked in — waiting for opponent…');
   mpRenderHand();
-  // Send the locked card to opponent
   mpSend({type:'card-locked', card:{id:card.id,name:card.name,icon:card.icon,type:card.type,power:card.power,rarity:card.rarity,effect:card.effect}});
+  // Start timer for opponent if they haven't locked yet
+  if(!MP.oppLockedCard) mpStartTimer();
   _mpMaybeReveal();
 }
 
@@ -3804,64 +3842,74 @@ function _mpMaybeReveal(){
 }
 
 async function mpRevealCards(){
+  mpStopTimer();
   MP.phase='revealing';
   const pCard=MP.myLockedCard;
   const cCard=MP.oppLockedCard;
   if(!pCard||!cCard) return;
 
-  // Show both cards
+  // Reveal opponent's card in their slot
   const ps=document.getElementById('mp-p-slot');
   const cs=document.getElementById('mp-opp-slot');
-  ps.className='mp-slot revealed';
-  cs.className='mp-slot revealed';
-  cs.innerHTML=`<span style="font-size:1.8rem">${cCard.icon}</span><div style="font-size:.65rem;color:var(--t2);margin-top:3px">${cCard.name}</div>`;
-  await mpDelay(600);
-
-  // Resolve
-  const pType=pCard.type==='buff'?'rock':(['rock','paper','scissors'].includes(pCard.type)?pCard.type:'special');
-  const cType=cCard.type==='buff'?'rock':(['rock','paper','scissors'].includes(cCard.type)?cCard.type:'special');
-  const pPow=pCard.power||3;
-  const cPow=cCard.power||3;
-  let outcome;
-  if(pType==='special'||cType==='special'){
-    // Special cards auto-win for the player who played them (simplified for MP)
-    outcome='win';
-  } else {
-    outcome=rpsResolve(pType,cType,pPow,cPow);
+  if(cs){
+    const oppEl=buildCardEl(cCard);
+    cs.innerHTML=oppEl.outerHTML;
+    cs.className='slot filled';
   }
+  await mpDelay(500);
 
-  let dmg=0, log='';
+  // Resolve — treat specials as their base type or auto-win
+  const pType=['rock','paper','scissors'].includes(pCard.type)?pCard.type:'rock';
+  const cType=['rock','paper','scissors'].includes(cCard.type)?cCard.type:'rock';
+  const pPow=Math.max(pCard.power||0, 3);
+  const cPow=Math.max(cCard.power||0, 3);
+  // Special effects: auto-win for whoever played the special
+  let outcome;
+  if(pCard.type==='special'&&cCard.type!=='special') outcome='win';
+  else if(cCard.type==='special'&&pCard.type!=='special') outcome='lose';
+  else outcome=rpsResolve(pType,cType,pPow,cPow);
+
+  let dmg=0;
   const ra=document.getElementById('mp-result-area');
   if(outcome==='win'){
     dmg=pPow; MP.oppHP=Math.max(0,MP.oppHP-dmg);
-    log=`Your ${pCard.name} beats ${cCard.name}! -${dmg} HP`;
-    ra.innerHTML=`<div style="font-family:'Cinzel',serif;color:var(--scissors-l);font-size:1.1rem;font-weight:700;">WIN +${dmg}</div>`;
+    mpSetLog(`Your ${pCard.name} beats ${cCard.name}! -${dmg} HP`);
+    ra.innerHTML=`<div style="font-family:'Cinzel',serif;color:var(--scissors-l);font-size:1.1rem;font-weight:700;padding:.3rem;">WIN! -${dmg} HP</div>`;
+    if(ps) ps.style.boxShadow='0 0 18px rgba(88,214,141,.4)';
   } else if(outcome==='lose'){
     dmg=cPow; MP.myHP=Math.max(0,MP.myHP-dmg);
-    log=`${cCard.name} beats your ${pCard.name}! -${dmg} HP`;
-    ra.innerHTML=`<div style="font-family:'Cinzel',serif;color:var(--rock-l);font-size:1.1rem;font-weight:700;">LOSS -${dmg}</div>`;
+    mpSetLog(`${cCard.name} beats your ${pCard.name}! -${dmg} HP`);
+    ra.innerHTML=`<div style="font-family:'Cinzel',serif;color:var(--rock-l);font-size:1.1rem;font-weight:700;padding:.3rem;">LOSS -${dmg} HP</div>`;
+    if(cs) cs.style.boxShadow='0 0 18px rgba(231,76,60,.4)';
   } else {
-    log=`Draw! ${pCard.name} vs ${cCard.name}`;
-    ra.innerHTML=`<div style="font-family:'Cinzel',serif;color:var(--gold);font-size:1.1rem;font-weight:700;">DRAW</div>`;
+    mpSetLog(`Draw! ${pCard.name} vs ${cCard.name}`);
+    ra.innerHTML=`<div style="font-family:'Cinzel',serif;color:var(--gold);font-size:1.1rem;font-weight:700;padding:.3rem;">DRAW</div>`;
   }
-  mpSetLog(log);
   mpUpdateHeader();
-  await mpDelay(1800);
+  await mpDelay(2000);
+
+  if(ps) ps.style.boxShadow='';
+  if(cs) cs.style.boxShadow='';
 
   // Check game over
   if(MP.myHP<=0){ mpShowGameOver('You were defeated!', false); return; }
   if(MP.oppHP<=0){ mpShowGameOver('You win the duel!', true); return; }
 
-  // Next round
+  // Reset for next round
   MP.round++;
   MP.myLockedCard=null;
   MP.oppLockedCard=null;
+  MP._selectedIdx=null;
   MP.phase='idle';
   ra.innerHTML='';
-  ps.className='mp-slot'; ps.innerHTML='Select below';
-  cs.className='mp-slot'; cs.innerHTML='Waiting…';
+  if(ps){ ps.innerHTML='Your Card'; ps.className='slot'; }
+  if(cs){ cs.innerHTML='Opponent'; cs.className='slot'; }
   document.getElementById('mp-round-badge').textContent='Round '+MP.round;
-  if(MP.myHand.length<3) mpDrawCards(Math.min(2,5-MP.myHand.length));
+  // Replenish hand
+  if(MP.myHand.length<3) mpDrawCards(3-MP.myHand.length);
+  // Update face-down opp hand (decrement by 1 since they played one, then refill toward 5)
+  MP.oppHandCount=Math.max(3,MP.oppHandCount-1);
+  mpRenderOppHand(MP.oppHandCount);
   mpRenderHand();
   document.getElementById('mp-draw-btn').disabled=false;
   document.getElementById('mp-play-btn').disabled=true;
@@ -3870,6 +3918,7 @@ async function mpRevealCards(){
 
 // ── GAME OVER ──
 function mpShowGameOver(msg, won){
+  mpStopTimer();
   MP.phase='gameover';
   const ra=document.getElementById('mp-result-area');
   ra.innerHTML=`
@@ -3890,6 +3939,7 @@ function mpRequestRematch(){
 }
 
 function mpQuit(){
+  mpStopTimer();
   mpSend({type:'quit'});
   if(MP.conn){ try{ MP.conn.close(); }catch{} }
   MP.myLockedCard=null; MP.oppLockedCard=null; MP.phase='idle';
@@ -3907,6 +3957,57 @@ function mpUpdateHeader(){
   document.getElementById('mp-c-hp-txt').textContent=MP.oppHP+'/'+MP.oppMaxHP;
   document.getElementById('mp-p-hp-fill').style.width=pct(MP.myHP,MP.myMaxHP);
   document.getElementById('mp-c-hp-fill').style.width=pct(MP.oppHP,MP.oppMaxHP);
+}
+
+// Render face-down card backs for opponent's hand
+function mpRenderOppHand(count){
+  const hand=document.getElementById('mp-opp-hand'); if(!hand) return;
+  hand.innerHTML='';
+  for(let i=0;i<Math.max(0,count);i++){
+    const back=document.createElement('div');
+    back.className='card-back';
+    back.innerHTML='<div class="card-back-inner">?</div>';
+    hand.appendChild(back);
+  }
+}
+
+// ── COUNTDOWN TIMER ──
+let _mpTimerInterval=null;
+let _mpTimerSecs=0;
+
+function mpStartTimer(){
+  mpStopTimer();
+  _mpTimerSecs=15;
+  const badge=document.getElementById('mp-timer-badge');
+  if(badge){ badge.style.display='inline'; badge.textContent='⏱ '+_mpTimerSecs+'s'; }
+  _mpTimerInterval=setInterval(()=>{
+    _mpTimerSecs--;
+    if(badge) badge.textContent='⏱ '+_mpTimerSecs+'s';
+    if(_mpTimerSecs<=5 && badge) badge.style.color='var(--rock-l)';
+    if(_mpTimerSecs<=0){
+      mpStopTimer();
+      // Auto-pick a random card if player hasn't locked in yet
+      if(!MP.myLockedCard && MP.phase==='idle'){
+        mpSetLog('⏱ Time\'s up! Random card played.');
+        if(MP.myHand.length>0){
+          MP._selectedIdx=Math.floor(Math.random()*MP.myHand.length);
+          mpPlayCard();
+        }
+      }
+    }
+  },1000);
+}
+
+function mpStopTimer(){
+  if(_mpTimerInterval){ clearInterval(_mpTimerInterval); _mpTimerInterval=null; }
+  const badge=document.getElementById('mp-timer-badge');
+  if(badge){ badge.style.display='none'; badge.textContent=''; }
+}
+
+// Collection button during mp — show collection then come back
+function showMpCollection(){
+  G.prevScreen='mp-battle';
+  showCollection();
 }
 
 function mpSetLog(msg){ const el=document.getElementById('mp-log'); if(el) el.textContent=msg; }
