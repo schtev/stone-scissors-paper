@@ -613,9 +613,10 @@ html,body{background:var(--bg);color:var(--t1);font-family:'Crimson Text',serif;
     <h1 style="font-size:clamp(1.4rem,5vw,2.6rem);">⚔ Duel a Friend</h1>
     <p>Peer-to-peer — no accounts, no servers</p>
   </div>
-  <div id="mp-conn-status" style="display:flex;align-items:center;gap:.4rem;font-size:.78rem;color:var(--t2);">
+  <div id="mp-conn-status" style="display:flex;align-items:center;gap:.6rem;font-size:.78rem;color:var(--t2);flex-wrap:wrap;justify-content:center;">
     <span class="mp-conn-dot waiting" id="mp-dot"></span>
     <span id="mp-conn-label">Connecting to relay…</span>
+    <button class="btn xs" onclick="openMpLobby()" style="padding:.2rem .6rem;font-size:.65rem;">Retry</button>
   </div>
 
   <div style="display:flex;gap:1rem;flex-wrap:wrap;justify-content:center;width:100%;max-width:760px;">
@@ -3375,8 +3376,77 @@ function loadPeerJS(cb){
   const s=document.createElement('script');
   s.src='https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js';
   s.onload=cb;
-  s.onerror=()=>{ mpSetStatus('peer','Failed to load PeerJS — check your internet connection.',false); };
+  s.onerror=()=>{
+    _peerJsLoaded=false;
+    mpSetConnDot('offline');
+    const cl=document.getElementById('mp-conn-label');
+    if(cl){ cl.textContent='Failed to load PeerJS library. Check your internet connection.'; cl.style.color='var(--rock-l)'; }
+  };
   document.head.appendChild(s);
+}
+
+// PeerJS broker configs to try in order
+const MP_BROKER_CONFIGS = [
+  // PeerJS cloud (primary)
+  { host:'0.peerjs.com', port:443, path:'/', secure:true, debug:0,
+    config:{iceServers:[
+      {urls:'stun:stun.l.google.com:19302'},
+      {urls:'stun:stun1.l.google.com:19302'},
+    ]}
+  },
+  // Fallback: PeerJS cloud on different path
+  { host:'peerjs.com', port:443, path:'/myapp', secure:true, debug:0,
+    config:{iceServers:[{urls:'stun:stun.l.google.com:19302'}]}
+  },
+];
+let _brokerIdx = 0;
+
+function _mpMakePeer(customId, onOpen, onError){
+  const cfg = MP_BROKER_CONFIGS[_brokerIdx % MP_BROKER_CONFIGS.length];
+  const peer = customId
+    ? new Peer(customId, cfg)
+    : new Peer(cfg);
+
+  let opened = false;
+  const timeout = setTimeout(()=>{
+    if(!opened){
+      peer.destroy();
+      _brokerIdx++;
+      if(_brokerIdx < MP_BROKER_CONFIGS.length){
+        const cl=document.getElementById('mp-conn-label');
+        if(cl) cl.textContent='Primary relay timed out, trying backup…';
+        _mpMakePeer(customId, onOpen, onError);
+      } else {
+        _brokerIdx=0;
+        onError('All relays timed out. Try again in a moment.');
+      }
+    }
+  }, 8000);
+
+  peer.on('open', id=>{
+    opened=true; clearTimeout(timeout); onOpen(peer, id);
+  });
+  peer.on('error', e=>{
+    clearTimeout(timeout);
+    if(e.type==='unavailable-id'){
+      peer.destroy();
+      onError('unavailable-id');
+    } else if(e.type==='network'||e.type==='server-error'||e.type==='socket-error'){
+      peer.destroy();
+      _brokerIdx++;
+      if(_brokerIdx < MP_BROKER_CONFIGS.length){
+        const cl=document.getElementById('mp-conn-label');
+        if(cl) cl.textContent='Relay error ('+e.type+'), trying backup…';
+        setTimeout(()=>_mpMakePeer(customId, onOpen, onError), 500);
+      } else {
+        _brokerIdx=0;
+        onError('Could not reach any relay server. Try again later.');
+      }
+    } else {
+      onError(e.type);
+    }
+  });
+  return peer;
 }
 
 // ── Multiplayer State ──
@@ -3417,35 +3487,41 @@ function mpSetConnDot(state){ // 'waiting' | 'online' | 'offline'
   if(label) label.textContent=msgs[state]||'';
 }
 
-// Called when multiplayer button is clicked — lazy-load PeerJS and init peer
+// Called when multiplayer button is clicked
 function openMpLobby(){
   mpPopulateDeckSelects();
   showScreen('mp-lobby');
   mpSetConnDot('waiting');
-  // Disable buttons until peer is ready
   const hb=document.getElementById('mp-host-btn');
   const jb=document.getElementById('mp-join-btn');
   if(hb) hb.disabled=true;
   if(jb) jb.disabled=true;
+
   loadPeerJS(()=>{
-    if(MP.peer&&!MP.peer.destroyed){ mpSetConnDot('online'); mpEnableBtns(); return; }
-    try {
-      const peer=new Peer(undefined,{debug:0});
-      MP.peer=peer;
-      peer.on('open',()=>{ mpSetConnDot('online'); mpEnableBtns(); });
-      peer.on('error',(e)=>{
-        mpSetConnDot('offline');
-        const msg=e.type==='unavailable-id'?'Code taken — try again':
-                  e.type==='network'?'Network error — check your connection':
-                  'Relay error: '+e.type;
-        const cl=document.getElementById('mp-conn-label');
-        if(cl){ cl.textContent=msg; cl.style.color='var(--rock-l)'; }
-      });
-      peer.on('disconnected',()=>{ mpSetConnDot('offline'); try{ peer.reconnect(); }catch{} });
-    } catch(err) {
-      const cl=document.getElementById('mp-conn-label');
-      if(cl){ cl.textContent='Failed to init: '+err.message; cl.style.color='var(--rock-l)'; }
+    // If we already have a good working peer, reuse it
+    if(MP.peer&&!MP.peer.destroyed&&MP.peer.open){
+      mpSetConnDot('online'); mpEnableBtns(); return;
     }
+    if(MP.peer&&!MP.peer.destroyed){ try{ MP.peer.destroy(); }catch{} }
+    MP.peer=null;
+    const cl=document.getElementById('mp-conn-label');
+    if(cl) cl.textContent='Connecting to relay…';
+
+    _mpMakePeer(null,
+      (peer)=>{
+        MP.peer=peer;
+        mpSetConnDot('online'); mpEnableBtns();
+        peer.on('disconnected',()=>{
+          mpSetConnDot('offline');
+          try{ peer.reconnect(); }catch{}
+        });
+      },
+      (errMsg)=>{
+        mpSetConnDot('offline');
+        const cl=document.getElementById('mp-conn-label');
+        if(cl){ cl.textContent=errMsg; cl.style.color='var(--rock-l)'; }
+      }
+    );
   });
 }
 
@@ -3479,44 +3555,72 @@ function mpCopyCode(){
 
 // ── JOIN ──
 function mpJoin(){
-  if(!MP.peer||MP.peer.destroyed){ mpSetStatus('join','Not connected to relay yet.',true); return; }
   const input=document.getElementById('mp-join-code').value.trim().toUpperCase();
-  if(input.length<3){ mpSetStatus('join','Enter the full room code.',true); return; }
+  if(input.length<3){ mpSetStatus('join','Enter the full 4-letter room code.',true); return; }
+  if(!window.Peer){ mpSetStatus('join','PeerJS still loading — wait a moment.',true); return; }
   MP.deckId=document.getElementById('mp-join-deck-select').value;
   MP.isHost=false;
   mpSetStatus('join','Connecting to host…');
-  // Find the peer by searching for a peer whose ID ends with the code
-  // Since PeerJS generates random IDs, the host needs to share their full peer ID OR we embed the code in it
-  // We use a known prefix so IDs are predictable
-  const hostId = _mpFindPeerId(input);
-  const conn=MP.peer.connect(hostId,{reliable:true,serialization:'json'});
-  conn.on('open',()=>{ mpOnConnection(conn); mpSetStatus('join','Connected!'); });
-  conn.on('error',(e)=>mpSetStatus('join','Could not connect: '+e.message,true));
+  const hostId=_mpFindPeerId(input);
+
+  const doConnect=(peer)=>{
+    // Give the broker a moment to register the joiner's peer before connecting
+    setTimeout(()=>{
+      try{
+        const conn=peer.connect(hostId,{reliable:true,serialization:'json'});
+        let opened=false;
+        const t=setTimeout(()=>{
+          if(!opened) mpSetStatus('join','⚠ Timed out — check the code and try again.',true);
+        },10000);
+        conn.on('open',()=>{ opened=true; clearTimeout(t); mpOnConnection(conn); });
+        conn.on('error',(e)=>{ clearTimeout(t); mpSetStatus('join','⚠ Could not connect: '+e.type,true); });
+      } catch(e){ mpSetStatus('join','⚠ Connection failed: '+e.message,true); }
+    },400);
+  };
+
+  // Reuse existing peer if healthy, otherwise create a fresh one
+  if(MP.peer&&!MP.peer.destroyed&&MP.peer.open){
+    doConnect(MP.peer);
+  } else {
+    if(MP.peer&&!MP.peer.destroyed){ try{ MP.peer.destroy(); }catch{} }
+    _mpMakePeer(null,
+      (peer)=>{ MP.peer=peer; doConnect(peer); },
+      (errMsg)=>{ mpSetStatus('join','⚠ Relay error: '+errMsg,true); }
+    );
+  }
 }
 
 // Since PeerJS assigns random IDs we need a way to reconstruct the host's peer ID from the code.
 // Solution: when hosting we set a custom peer ID that IS the code (4 uppercase letters).
 // Re-init peer with custom ID on host.
 function mpHostWithCode(){
-  if(!window.Peer){ mpSetStatus('host','PeerJS still loading — wait a moment then try again.',true); return; }
+  if(!window.Peer){ mpSetStatus('host','PeerJS still loading — wait a moment.',true); return; }
   if(MP.peer&&!MP.peer.destroyed){ try{ MP.peer.destroy(); }catch{} }
   MP.peer=null;
+  mpSetStatus('host','Generating room code…');
   const code=_mpGenCode();
-  const peer=new Peer('SSP-'+code,{debug:0});
-  MP.peer=peer;
-  peer.on('open',()=>{
-    document.getElementById('mp-host-code').textContent=code;
-    document.getElementById('mp-host-code-area').style.display='block';
-    mpSetStatus('host','Waiting for opponent to join…');
-    MP.isHost=true;
-    MP.deckId=document.getElementById('mp-deck-select').value;
-    MP.handSize=parseInt(document.getElementById('mp-hand-select').value)||5;
-    peer.on('connection',conn=>mpOnConnection(conn));
-  });
-  peer.on('error',e=>{
-    if(e.type==='unavailable-id') mpHostWithCode();
-    else mpSetStatus('host','Error: '+e.type,true);
-  });
+
+  _mpMakePeer('SSP-'+code,
+    (peer)=>{
+      MP.peer=peer;
+      document.getElementById('mp-host-code').textContent=code;
+      document.getElementById('mp-host-code-area').style.display='block';
+      mpSetStatus('host','Waiting for opponent to join…');
+      MP.isHost=true;
+      MP.deckId=document.getElementById('mp-deck-select').value;
+      MP.handSize=parseInt(document.getElementById('mp-hand-select').value)||5;
+      peer.on('connection',conn=>mpOnConnection(conn));
+      peer.on('disconnected',()=>{ try{ peer.reconnect(); }catch{} });
+    },
+    (errMsg)=>{
+      if(errMsg==='unavailable-id'){
+        // Code collision, silently retry with a new code
+        mpHostWithCode();
+      } else {
+        mpSetStatus('host','⚠ '+errMsg,true);
+      }
+    }
+  );
 }
 
 // Override the host button to use fixed-ID approach
