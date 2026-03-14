@@ -1,0 +1,3796 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stone Scissors Paper — Roguelike</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700;900&family=Crimson+Text:ital,wght@0,400;0,600;1,400&display=swap');
+:root{
+  --rock:#c0392b;--rock-l:#e74c3c;--rock-d:#7b241c;
+  --paper:#2980b9;--paper-l:#5dade2;--paper-d:#1a5276;
+  --scissors:#27ae60;--scissors-l:#58d68d;--scissors-d:#1d8348;
+  --special:#8e44ad;--special-l:#af7ac5;--special-d:#6c3483;
+  --gold:#f39c12;--gold-l:#f1c40f;--gold-d:#d68910;
+  --common:#7f8c8d;--uncommon:#27ae60;--rare:#2980b9;--legendary:#8e44ad;
+  --bg:#07070f;--s1:#0f0f1c;--s2:#161625;--s3:#1e1e35;--s4:#27274a;
+  --t1:#e8e4d9;--t2:#9e99a0;--t3:#5a5760;
+  --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.14);
+  --glow:rgba(243,156,18,.25);
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+html,body{background:var(--bg);color:var(--t1);font-family:'Crimson Text',serif;font-size:16px;min-height:100vh;overflow-x:hidden;}
+::-webkit-scrollbar{width:5px;}::-webkit-scrollbar-track{background:var(--s1);}::-webkit-scrollbar-thumb{background:var(--s3);border-radius:3px;}
+
+/* ── SCREENS ── */
+.screen{display:none;min-height:100vh;flex-direction:column;}
+.screen.active{display:flex;}
+
+/* ── BUTTONS ── */
+.btn{font-family:'Cinzel',serif;font-size:.85rem;font-weight:700;letter-spacing:.08em;padding:.7rem 1.8rem;border:1px solid var(--gold);background:transparent;color:var(--gold);border-radius:8px;cursor:pointer;transition:all .2s;text-transform:uppercase;white-space:nowrap;}
+.btn:hover{background:rgba(243,156,18,.12);box-shadow:0 0 16px var(--glow);}
+.btn:disabled{opacity:.3;cursor:not-allowed;pointer-events:none;}
+.btn.primary{background:var(--gold);color:#000;}
+.btn.primary:hover{background:var(--gold-l);}
+.btn.sm{padding:.45rem 1rem;font-size:.75rem;}
+.btn.xs{padding:.3rem .7rem;font-size:.7rem;}
+.btn.danger{border-color:var(--rock);color:var(--rock);}
+.btn.danger:hover{background:rgba(192,57,43,.12);}
+.btn.info{border-color:var(--paper);color:var(--paper);}
+.btn.info:hover{background:rgba(41,128,185,.12);}
+.btn.success{border-color:var(--scissors);color:var(--scissors);}
+.btn.success:hover{background:rgba(39,174,96,.12);}
+
+/* ══════════════════════════════════
+   START SCREEN
+══════════════════════════════════ */
+#start-screen{
+  background:radial-gradient(ellipse at 50% 10%,rgba(139,69,19,.12) 0%,transparent 55%),
+             radial-gradient(ellipse at 80% 90%,rgba(41,128,185,.07) 0%,transparent 50%),var(--bg);
+  align-items:center;justify-content:center;padding:2rem 1rem;gap:1.5rem;
+}
+.game-logo{text-align:center;}
+.game-logo h1{font-family:'Cinzel',serif;font-size:clamp(2rem,7vw,4.5rem);font-weight:900;letter-spacing:.04em;color:var(--gold);text-shadow:0 0 50px rgba(243,156,18,.35),0 0 100px rgba(243,156,18,.1);line-height:1.05;}
+.game-logo p{color:var(--t2);font-style:italic;margin-top:.3rem;}
+
+.tabs{display:flex;gap:0;border:1px solid var(--border2);border-radius:8px;overflow:hidden;margin-bottom:.5rem;}
+.tab{padding:.5rem 1.2rem;font-family:'Cinzel',serif;font-size:.75rem;letter-spacing:.08em;cursor:pointer;background:transparent;border:none;color:var(--t2);transition:all .2s;text-transform:uppercase;}
+.tab.active{background:var(--s3);color:var(--t1);}
+.tab-content{display:none;width:100%;max-width:900px;}
+.tab-content.active{display:block;}
+
+/* deck grid */
+.deck-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:.75rem;}
+.deck-card{background:var(--s1);border:1px solid var(--border);border-radius:12px;padding:1.2rem .9rem;cursor:pointer;transition:all .25s;position:relative;overflow:hidden;}
+.deck-card::after{content:'';position:absolute;inset:0;opacity:0;transition:opacity .3s;pointer-events:none;}
+.deck-card:hover::after,.deck-card.sel::after{opacity:1;}
+.deck-card[data-d=warrior]::after{background:radial-gradient(ellipse at 50% 0%,rgba(192,57,43,.25),transparent 70%);}
+.deck-card[data-d=trickster]::after{background:radial-gradient(ellipse at 50% 0%,rgba(39,174,96,.25),transparent 70%);}
+.deck-card[data-d=sage]::after{background:radial-gradient(ellipse at 50% 0%,rgba(41,128,185,.25),transparent 70%);}
+.deck-card[data-d=brawler]::after{background:radial-gradient(ellipse at 50% 0%,rgba(192,57,43,.25),transparent 70%);}
+.deck-card[data-d=tactician]::after{background:radial-gradient(ellipse at 50% 0%,rgba(41,128,185,.25),transparent 70%);}
+.deck-card[data-d=gambler]::after{background:radial-gradient(ellipse at 50% 0%,rgba(243,156,18,.25),transparent 70%);}
+.deck-card[data-d=strategist]::after{background:radial-gradient(ellipse at 50% 0%,rgba(142,68,173,.25),transparent 70%);}
+.deck-card[data-d=combo]::after{background:radial-gradient(ellipse at 50% 0%,rgba(231,76,60,.25),transparent 70%);}
+.deck-card[data-d=hoarder]::after{background:radial-gradient(ellipse at 50% 0%,rgba(231,76,60,.2),transparent 70%);}
+.deck-card.sel{border-width:2px;transform:translateY(-3px);}
+.deck-card[data-d=warrior].sel{border-color:var(--rock);}
+.deck-card[data-d=trickster].sel{border-color:var(--scissors);}
+.deck-card[data-d=sage].sel{border-color:var(--paper);}
+.deck-card[data-d=brawler].sel{border-color:var(--rock);}
+.deck-card[data-d=tactician].sel{border-color:var(--paper);}
+.deck-card[data-d=gambler].sel{border-color:var(--gold);}
+.deck-card[data-d=strategist].sel{border-color:var(--special);}
+.deck-card[data-d=combo].sel{border-color:var(--rock-l);}
+.deck-card[data-d=hoarder].sel{border-color:#e74c3c;}
+.deck-card.locked{opacity:.35;cursor:not-allowed;}
+.deck-icon{font-size:2rem;margin-bottom:.4rem;}
+.deck-name{font-family:'Cinzel',serif;font-size:.95rem;font-weight:700;margin-bottom:.3rem;}
+.deck-perk{font-size:.72rem;color:var(--gold);margin-bottom:.3rem;font-style:italic;}
+.deck-desc{font-size:.75rem;color:var(--t2);line-height:1.5;}
+.lock-tag{font-size:.65rem;color:var(--t3);margin-top:.4rem;}
+
+/* collection screen */
+.coll-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:.5rem;}
+.rarity-header{font-family:'Cinzel',serif;font-size:.8rem;letter-spacing:.1em;padding:.4rem 0;margin:.8rem 0 .3rem;border-bottom:1px solid var(--border);}
+.rarity-header.common{color:var(--common);}
+.rarity-header.uncommon{color:var(--uncommon);}
+.rarity-header.rare{color:var(--rare);}
+.rarity-header.legendary{color:var(--legendary);}
+
+/* ══════════════════════════════════
+   BATTLE SCREEN
+══════════════════════════════════ */
+#battle-screen{background:var(--bg);}
+.b-header{display:flex;align-items:center;gap:.75rem;padding:.6rem 1.2rem;background:var(--s1);border-bottom:1px solid var(--border);flex-wrap:wrap;}
+.r-badge{font-family:'Cinzel',serif;font-size:.8rem;color:var(--gold);letter-spacing:.1em;white-space:nowrap;}
+.hp-wrap{flex:1;min-width:110px;max-width:180px;}
+.hp-label{font-size:.68rem;color:var(--t2);display:flex;justify-content:space-between;margin-bottom:2px;}
+.hp-bar{height:7px;background:rgba(255,255,255,.08);border-radius:4px;overflow:hidden;}
+.hp-fill{height:100%;border-radius:4px;transition:width .5s;}
+.hp-fill.p{background:linear-gradient(90deg,var(--scissors-d),var(--scissors-l));}
+.hp-fill.c{background:linear-gradient(90deg,var(--rock-d),var(--rock-l));}
+.meta-bar{display:flex;gap:1rem;align-items:center;padding:.35rem 1.2rem;background:var(--s1);border-bottom:1px solid var(--border);font-size:.72rem;color:var(--t2);flex-wrap:wrap;}
+.meta-bar b{color:var(--t1);}
+.meta-bar .gold{color:var(--gold);}
+.meta-bar .luck{color:var(--special-l);}
+
+/* cpu zone */
+.cpu-zone{padding:.75rem 1rem .3rem;display:flex;flex-direction:column;align-items:center;gap:.4rem;}
+.zone-label{font-size:.7rem;color:var(--t3);letter-spacing:.1em;text-transform:uppercase;display:flex;align-items:center;gap:.5rem;}
+.peek-badge{font-size:.6rem;background:rgba(243,156,18,.15);color:var(--gold);border:1px solid rgba(243,156,18,.3);border-radius:4px;padding:1px 6px;}
+
+/* battle field */
+.field{display:flex;align-items:center;justify-content:center;gap:2.5rem;padding:.75rem 1rem;flex:1;position:relative;min-height:200px;}
+.slot{width:96px;height:135px;border:1.5px dashed rgba(255,255,255,.12);border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:.7rem;color:rgba(255,255,255,.18);position:relative;transition:all .3s;}
+.slot.filled{border-style:solid;border-color:transparent;}
+.vs{font-family:'Cinzel',serif;font-size:1.3rem;font-weight:900;color:var(--gold);opacity:.6;}
+
+/* player zone */
+.p-zone{padding:.3rem .75rem .75rem;display:flex;flex-direction:column;align-items:center;gap:.5rem;}
+.p-hand{display:flex;gap:.4rem;flex-wrap:wrap;justify-content:center;min-height:135px;align-items:flex-end;}
+.action-row{display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;justify-content:center;}
+
+/* buff zone - one-time use buffs */
+.buff-row{display:flex;gap:.4rem;flex-wrap:wrap;justify-content:center;min-height:30px;align-items:center;padding:.2rem 0;}
+.buff-slot-label{font-size:.68rem;color:var(--t3);letter-spacing:.08em;margin-right:.3rem;}
+
+.log{padding:.4rem 1rem;font-size:.78rem;color:var(--t2);text-align:center;min-height:1.8rem;font-style:italic;border-top:1px solid var(--border);}
+
+/* effects panel */
+.effects-row{display:flex;gap:.4rem;flex-wrap:wrap;padding:.2rem 1.2rem;font-size:.68rem;min-height:22px;}
+.eff-tag{background:var(--s2);border:1px solid var(--border2);border-radius:4px;padding:2px 7px;color:var(--gold);}
+
+/* ══════════════════════════════════
+   CARDS
+══════════════════════════════════ */
+.card{
+  width:96px;height:135px;border-radius:10px;display:flex;flex-direction:column;
+  align-items:center;justify-content:space-between;padding:.45rem .4rem .35rem;
+  cursor:pointer;transition:transform .2s,box-shadow .2s,border-color .2s;
+  position:relative;border:1.5px solid rgba(255,255,255,.13);user-select:none;flex-shrink:0;
+}
+.card:hover{transform:translateY(-14px) scale(1.04);z-index:5;}
+.card.sel{transform:translateY(-18px) scale(1.06);box-shadow:0 0 22px rgba(243,156,18,.45);border-color:var(--gold);z-index:6;}
+.card.cpu-card,.card.in-battle,.card.no-hover{cursor:default;}
+.card.cpu-card:hover,.card.in-battle:hover,.card.no-hover:hover{transform:none;}
+.card.dis{opacity:.4;cursor:not-allowed;}
+.card.dis:hover{transform:none;}
+/* type backgrounds */
+.ct-rock{background:linear-gradient(160deg,#1e0808,#130404);border-color:rgba(192,57,43,.35);}
+.ct-paper{background:linear-gradient(160deg,#081018,#040b12);border-color:rgba(41,128,185,.35);}
+.ct-scissors{background:linear-gradient(160deg,#081508,#040f04);border-color:rgba(39,174,96,.35);}
+.ct-special{background:linear-gradient(160deg,#120820,#0a0415);border-color:rgba(142,68,173,.35);}
+.ct-buff{background:linear-gradient(160deg,#181405,#0f0d03);border-color:rgba(243,156,18,.35);}
+/* rarity glow */
+.card.rar-common{border-color:rgba(127,140,141,.25);}
+.card.rar-uncommon{border-color:rgba(39,174,96,.45);}
+.card.rar-rare{border-color:rgba(41,128,185,.55);box-shadow:0 0 8px rgba(41,128,185,.2);}
+.card.rar-legendary{border-color:rgba(142,68,173,.7);box-shadow:0 0 12px rgba(142,68,173,.3);}
+
+.card-top{display:flex;justify-content:space-between;align-items:flex-start;width:100%;}
+.card-pw{font-family:'Cinzel',serif;font-size:.95rem;font-weight:700;line-height:1;}
+.ct-rock .card-pw{color:var(--rock-l);}
+.ct-paper .card-pw{color:var(--paper-l);}
+.ct-scissors .card-pw{color:var(--scissors-l);}
+.ct-special .card-pw{color:var(--special-l);}
+.ct-buff .card-pw{color:var(--gold-l);}
+.card-rarity-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;}
+.rd-common{background:var(--common);}
+.rd-uncommon{background:var(--uncommon);}
+.rd-rare{background:var(--rare);}
+.rd-legendary{background:var(--legendary);}
+.card-icon{font-size:2rem;line-height:1;}
+.card-bot{width:100%;}
+.card-name{font-size:.58rem;color:rgba(255,255,255,.5);text-align:center;letter-spacing:.04em;text-transform:uppercase;}
+.card-abil{font-size:.52rem;color:rgba(255,255,255,.3);text-align:center;margin-top:2px;font-style:italic;line-height:1.3;}
+.card-back{background:linear-gradient(160deg,var(--s2),var(--s1));border:1.5px solid var(--border);width:96px;height:135px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:1.5rem;flex-shrink:0;}
+.preview-hint{position:absolute;top:-17px;left:50%;transform:translateX(-50%);font-size:.58rem;color:var(--gold);white-space:nowrap;background:rgba(0,0,0,.8);padding:1px 5px;border-radius:3px;}
+
+/* small buff card */
+.buff-card{
+  width:80px;height:50px;border-radius:7px;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;padding:.2rem .3rem;
+  cursor:pointer;transition:transform .15s,box-shadow .15s;position:relative;
+  border:1.5px solid rgba(243,156,18,.35);background:linear-gradient(160deg,#181405,#0f0d03);
+  flex-shrink:0;
+}
+.buff-card:hover{transform:scale(1.06);z-index:5;}
+.buff-card.sel{border-color:var(--gold);box-shadow:0 0 14px rgba(243,156,18,.4);}
+.buff-card.used{opacity:.3;cursor:not-allowed;}
+.buff-card .bn{font-size:.58rem;color:var(--gold);text-align:center;font-family:'Cinzel',serif;letter-spacing:.03em;line-height:1.2;}
+.buff-card .bi{font-size:1rem;}
+.buff-card .br{font-size:.5rem;color:rgba(243,156,18,.5);text-align:center;font-style:italic;margin-top:1px;}
+
+/* ══════════════════════════════════
+   ANIMATIONS
+══════════════════════════════════ */
+@keyframes cardPlay{
+  0%{transform:scale(.8) translateY(20px);opacity:0;}
+  60%{transform:scale(1.1) translateY(-5px);opacity:1;}
+  100%{transform:scale(1) translateY(0);opacity:1;}
+}
+@keyframes cardWin{
+  0%{transform:scale(1);}
+  30%{transform:scale(1.15) rotate(-3deg);}
+  60%{transform:scale(1.1) rotate(2deg);}
+  100%{transform:scale(1);}
+}
+@keyframes cardLose{
+  0%,100%{transform:translateX(0);}
+  20%{transform:translateX(-6px);}
+  40%{transform:translateX(6px);}
+  60%{transform:translateX(-4px);}
+  80%{transform:translateX(4px);}
+}
+@keyframes floatUp{from{opacity:1;transform:translateY(0);}to{opacity:0;transform:translateY(-45px);}}
+@keyframes popIn{
+  from{opacity:0;transform:translate(-50%,-50%) scale(.4);}
+  60%{transform:translate(-50%,-50%) scale(1.1);}
+  to{opacity:1;transform:translate(-50%,-50%) scale(1);}
+}
+@keyframes shimmer{0%{background-position:-200% 0;}100%{background-position:200% 0;}}
+@keyframes pulse{0%,100%{opacity:1;}50%{opacity:.5;}}
+
+.anim-play{animation:cardPlay .4s cubic-bezier(.175,.885,.32,1.275) forwards;}
+.anim-win{animation:cardWin .5s ease;}
+.anim-lose{animation:cardLose .4s ease;}
+
+.result-banner{
+  position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+  font-family:'Cinzel',serif;font-size:1.8rem;font-weight:900;
+  padding:.4rem 1.8rem;border-radius:8px;z-index:20;pointer-events:none;
+  white-space:nowrap;animation:popIn .4s cubic-bezier(.175,.885,.32,1.275);
+}
+.result-banner.win{color:var(--scissors-l);text-shadow:0 0 25px rgba(39,174,96,.6);}
+.result-banner.lose{color:var(--rock-l);text-shadow:0 0 25px rgba(192,57,43,.6);}
+.result-banner.draw{color:var(--gold);text-shadow:0 0 25px var(--glow);}
+
+.dmg-float{position:absolute;font-family:'Cinzel',serif;font-size:1.3rem;font-weight:700;pointer-events:none;animation:floatUp 1.3s ease forwards;z-index:30;}
+
+/* legendary shimmer on card */
+.shimmer-overlay{
+  position:absolute;inset:0;border-radius:9px;pointer-events:none;
+  background:linear-gradient(105deg,transparent 40%,rgba(255,255,255,.08) 50%,transparent 60%);
+  background-size:200% 100%;animation:shimmer 2.5s linear infinite;
+}
+
+/* ══════════════════════════════════
+   SHOP SCREEN
+══════════════════════════════════ */
+#shop-screen{
+  background:radial-gradient(ellipse at 50% 0%,rgba(243,156,18,.06),transparent 50%),var(--bg);
+  padding:1.5rem 1rem;align-items:center;gap:1rem;
+}
+.shop-title{font-family:'Cinzel',serif;font-size:1.8rem;font-weight:900;color:var(--gold);text-align:center;}
+.shop-subtitle{font-size:.85rem;color:var(--t2);text-align:center;}
+.shop-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:.75rem;width:100%;max-width:1000px;}
+.shop-item{background:var(--s1);border:1px solid var(--border);border-radius:12px;padding:1rem .85rem;display:flex;flex-direction:column;gap:.6rem;transition:border-color .2s;}
+.shop-item:hover{border-color:var(--border2);}
+.shop-item-h{display:flex;align-items:center;gap:.6rem;}
+.shop-item-icon{font-size:1.8rem;}
+.shop-item-name{font-family:'Cinzel',serif;font-size:.88rem;font-weight:700;}
+.shop-item-desc{font-size:.75rem;color:var(--t2);line-height:1.5;flex:1;}
+.shop-item-foot{display:flex;align-items:center;justify-content:space-between;}
+.shop-cost{color:var(--gold);font-size:.85rem;font-weight:600;}
+.shop-cost::before{content:'⚙ ';}
+.sold-tag{font-size:.72rem;color:var(--t3);font-style:italic;}
+
+/* ══════════════════════════════════
+   COLLECTION SCREEN
+══════════════════════════════════ */
+#collection-screen{
+  background:var(--bg);padding:1.5rem 1rem;align-items:center;
+}
+.coll-title{font-family:'Cinzel',serif;font-size:1.8rem;color:var(--gold);text-align:center;margin-bottom:.5rem;}
+.coll-stats{font-size:.8rem;color:var(--t2);text-align:center;margin-bottom:1rem;}
+.coll-body{width:100%;max-width:1000px;}
+.coll-section{margin-bottom:1.5rem;}
+
+/* ══════════════════════════════════
+   BONUS SCREEN (post-win)
+══════════════════════════════════ */
+#bonus-screen{
+  background:radial-gradient(ellipse at 50% 20%,rgba(142,68,173,.1),transparent 60%),var(--bg);
+  align-items:center;justify-content:center;padding:2rem 1rem;gap:1.2rem;
+}
+.bonus-title{font-family:'Cinzel',serif;font-size:1.8rem;color:var(--special-l);text-align:center;}
+.bonus-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:.75rem;width:100%;max-width:700px;}
+.bonus-card{background:var(--s1);border:1px solid rgba(142,68,173,.3);border-radius:12px;padding:1.1rem .9rem;cursor:pointer;transition:all .25s;text-align:center;}
+.bonus-card:hover{border-color:var(--special-l);transform:translateY(-3px);}
+.bonus-card.chosen{border-color:var(--special-l);background:rgba(142,68,173,.1);}
+.bonus-icon{font-size:2rem;margin-bottom:.4rem;}
+.bonus-name{font-family:'Cinzel',serif;font-size:.9rem;font-weight:700;margin-bottom:.3rem;}
+.bonus-desc{font-size:.75rem;color:var(--t2);line-height:1.5;}
+
+/* ══════════════════════════════════
+   GAME OVER / VICTORY
+══════════════════════════════════ */
+#gameover-screen{
+  align-items:center;justify-content:center;text-align:center;
+  background:radial-gradient(ellipse at 50% 30%,rgba(192,57,43,.12),transparent 60%),var(--bg);
+  padding:2rem;gap:1.5rem;
+}
+#victory-screen{
+  align-items:center;justify-content:center;text-align:center;
+  background:radial-gradient(ellipse at 50% 30%,rgba(39,174,96,.12),transparent 60%),var(--bg);
+  padding:2rem;gap:1.5rem;
+}
+.go-title{font-family:'Cinzel',serif;font-size:3rem;font-weight:900;color:var(--rock-l);text-shadow:0 0 40px rgba(192,57,43,.4);}
+.vic-title{font-family:'Cinzel',serif;font-size:3rem;font-weight:900;color:var(--scissors-l);text-shadow:0 0 40px rgba(39,174,96,.4);}
+.end-bonuses{display:flex;flex-wrap:wrap;gap:.5rem;justify-content:center;max-width:500px;}
+.bonus-pill{background:rgba(142,68,173,.15);border:1px solid rgba(142,68,173,.35);border-radius:20px;padding:.25rem .8rem;font-size:.75rem;color:var(--special-l);}
+.stats-box{display:grid;grid-template-columns:repeat(2,auto);gap:.3rem 2rem;font-size:.85rem;color:var(--t2);}
+.stats-box strong{color:var(--t1);}
+
+/* luck meter */
+.luck-bar-wrap{display:flex;align-items:center;gap:.5rem;}
+.luck-bar{width:60px;height:4px;background:rgba(255,255,255,.08);border-radius:2px;overflow:hidden;}
+.luck-fill{height:100%;background:linear-gradient(90deg,var(--special),var(--special-l));border-radius:2px;transition:width .5s;}
+
+/* CPU label */
+.cpu-name-tag{font-family:'Cinzel',serif;font-size:.85rem;color:var(--t1);background:var(--s2);border:1px solid var(--border2);border-radius:6px;padding:.2rem .6rem;}
+.cpu-behavior-tag{font-size:.65rem;color:var(--t2);font-style:italic;}
+
+/* active bonuses display */
+.active-bonuses{display:flex;flex-wrap:wrap;gap:.3rem;padding:.2rem 1.2rem;}
+.ab-tag{font-size:.62rem;background:rgba(142,68,173,.12);border:1px solid rgba(142,68,173,.25);border-radius:4px;padding:1px 6px;color:var(--special-l);}
+
+/* ── TRIAL OVERLAY ── */
+#trial-overlay{
+  display:none;position:fixed;inset:0;z-index:999;
+  background:rgba(0,0,0,.85);backdrop-filter:blur(4px);
+  align-items:center;justify-content:center;flex-direction:column;gap:1rem;padding:1.5rem;
+}
+#trial-overlay.active{display:flex;}
+.trial-box{
+  background:var(--s2);border:1px solid rgba(142,68,173,.5);border-radius:16px;
+  padding:1.5rem;max-width:600px;width:100%;display:flex;flex-direction:column;gap:1rem;
+  box-shadow:0 0 40px rgba(142,68,173,.25);
+}
+.trial-title{font-family:'Cinzel',serif;font-size:1.4rem;font-weight:900;color:var(--special-l);text-align:center;}
+.trial-status{font-size:.85rem;color:var(--t2);text-align:center;font-style:italic;}
+.trial-cpu-area{display:flex;gap:.5rem;justify-content:center;flex-wrap:wrap;}
+.trial-btn-row{display:flex;gap:.75rem;justify-content:center;flex-wrap:wrap;}
+.trial-progress{display:flex;gap:.4rem;justify-content:center;}
+.trial-pip{width:14px;height:14px;border-radius:50%;border:2px solid var(--t3);}
+.trial-pip.correct{background:var(--scissors);border-color:var(--scissors-l);}
+.trial-pip.wrong{background:var(--rock);border-color:var(--rock-l);}
+.trial-pip.streak{box-shadow:0 0 8px var(--scissors-l);}
+.trial-log{font-size:.8rem;color:var(--t2);text-align:center;min-height:1.5rem;font-style:italic;}
+.trial-result-big{font-family:'Cinzel',serif;font-size:1.6rem;font-weight:900;text-align:center;padding:.5rem;}
+
+/* ── DIFFICULTY SELECTOR ── */
+.diff-row{display:flex;gap:.6rem;flex-wrap:wrap;justify-content:center;}
+.diff-btn{
+  display:flex;flex-direction:column;align-items:center;gap:.25rem;
+  padding:.65rem 1.1rem;border-radius:10px;cursor:pointer;
+  border:1px solid var(--border2);background:var(--s2);
+  transition:all .2s;min-width:110px;font-family:'Crimson Text',serif;
+}
+.diff-btn:hover{border-color:var(--gold);background:var(--s3);}
+.diff-btn.active{border-color:var(--gold);background:var(--s3);box-shadow:0 0 14px var(--glow);}
+.diff-btn[data-diff="hard"].active{border-color:var(--rock-l);box-shadow:0 0 14px rgba(231,76,60,.3);}
+.diff-btn[data-diff="easy"].active{border-color:var(--scissors-l);box-shadow:0 0 14px rgba(88,214,141,.25);}
+.diff-icon{font-size:1.4rem;line-height:1;}
+.diff-name{font-family:'Cinzel',serif;font-size:.8rem;font-weight:700;color:var(--t1);}
+.diff-hint{font-size:.68rem;color:var(--t3);text-align:center;line-height:1.3;}
+
+/* hoarder deck accent */
+.deck-card[data-d=hoarder]::after{background:radial-gradient(ellipse at 50% 0%,rgba(231,76,60,.25),transparent 70%);}
+.deck-card[data-d=hoarder].sel{border-color:#e74c3c;}
+/* phantom deck accent */
+.deck-card[data-d=phantom]::after{background:radial-gradient(ellipse at 50% 0%,rgba(142,68,173,.3),transparent 70%);}
+.deck-card[data-d=phantom].sel{border-color:var(--special-l);}
+/* berserker deck accent */
+.deck-card[data-d=berserker]::after{background:radial-gradient(ellipse at 50% 0%,rgba(231,76,60,.35),transparent 70%);}
+.deck-card[data-d=berserker].sel{border-color:#e74c3c;}
+
+/* hoarder shop lock */
+.shop-locked-msg{
+  width:100%;padding:1.2rem;background:rgba(192,57,43,.08);border:1px solid rgba(192,57,43,.25);
+  border-radius:10px;text-align:center;font-size:.85rem;color:var(--rock-l);font-style:italic;
+}
+
+/* ── SOLO EFFECT FIELD ── */
+#solo-field{flex:1;}
+@keyframes soloFloat{
+  0%{transform:scale(.7) translateY(16px);opacity:0;}
+  60%{transform:scale(1.1) translateY(-6px);opacity:1;}
+  100%{transform:scale(1) translateY(0);opacity:1;}
+}
+@keyframes soloGlow{
+  0%,100%{box-shadow:0 0 12px var(--glow);}
+  50%{box-shadow:0 0 35px var(--glow),0 0 60px rgba(243,156,18,.15);}
+}
+.solo-card-anim{animation:soloFloat .45s cubic-bezier(.175,.885,.32,1.275) forwards,soloGlow 1.4s ease .45s infinite;}
+
+/* ══ MULTIPLAYER ══ */
+#mp-lobby-screen{background:radial-gradient(ellipse at 50% 10%,rgba(41,128,185,.1),transparent 55%),var(--bg);align-items:center;justify-content:center;gap:1.2rem;padding:2rem 1rem;}
+#mp-battle-screen{background:var(--bg);}
+.mp-room-code{font-family:'Cinzel',serif;font-size:3rem;font-weight:900;letter-spacing:.18em;color:var(--gold);text-shadow:0 0 30px var(--glow);text-align:center;}
+.mp-status{font-size:.85rem;color:var(--t2);text-align:center;min-height:1.4rem;font-style:italic;}
+.mp-section{background:var(--s1);border:1px solid var(--border2);border-radius:12px;padding:1.2rem 1.5rem;width:100%;max-width:360px;display:flex;flex-direction:column;gap:.75rem;}
+.mp-section h3{font-family:'Cinzel',serif;font-size:.85rem;color:var(--gold);letter-spacing:.1em;text-transform:uppercase;}
+.mp-hand{display:flex;gap:.4rem;flex-wrap:wrap;justify-content:center;min-height:120px;align-items:center;}
+.mp-vs-area{display:flex;align-items:center;justify-content:center;gap:2rem;padding:.5rem 1rem;flex-wrap:wrap;}
+.mp-slot{width:96px;height:135px;border:1.5px dashed rgba(255,255,255,.15);border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:.7rem;color:rgba(255,255,255,.2);position:relative;}
+.mp-slot.locked{border-color:var(--gold);background:rgba(243,156,18,.06);}
+.mp-slot.revealed{border-color:transparent;}
+.mp-player-label{font-size:.68rem;color:var(--t3);letter-spacing:.08em;text-transform:uppercase;margin-bottom:.3rem;}
+.mp-hp-row{display:flex;align-items:center;gap:.75rem;justify-content:center;flex-wrap:wrap;}
+.mp-hp-block{display:flex;flex-direction:column;align-items:center;gap:3px;min-width:110px;}
+.mp-hp-name{font-size:.72rem;color:var(--t2);}
+.mp-hp-bar{width:110px;height:6px;background:rgba(255,255,255,.08);border-radius:3px;overflow:hidden;}
+.mp-hp-fill{height:100%;border-radius:3px;transition:width .5s;}
+.mp-log{font-size:.82rem;color:var(--t2);text-align:center;min-height:1.4rem;font-style:italic;padding:.3rem 1rem;}
+.mp-waiting-pulse{animation:mpPulse 1.4s ease-in-out infinite;}
+@keyframes mpPulse{0%,100%{opacity:.4;}50%{opacity:1;}}
+.mp-conn-dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:4px;}
+.mp-conn-dot.online{background:var(--scissors);}
+.mp-conn-dot.offline{background:var(--rock);}
+.mp-conn-dot.waiting{background:var(--gold);animation:mpPulse 1s infinite;}
+
+/* responsive small screens */
+@media(max-width:420px){.field{gap:1rem;}.slot{width:80px;height:115px;}}
+</style>
+</head>
+<body>
+<div id="app">
+
+<!-- ══ START SCREEN ══ -->
+<div id="start-screen" class="screen active">
+  <div class="game-logo">
+    <h1>Stone · Scissors · Paper</h1>
+    <p>A Roguelike Duel of Fate</p>
+  </div>
+  <div style="display:flex;flex-direction:column;align-items:center;gap:.75rem;width:100%;max-width:950px;">
+    <div class="tabs" id="start-tabs">
+      <button class="tab active" onclick="switchTab('decks')">Choose Deck</button>
+      <button class="tab" onclick="switchTab('collection')">Collection</button>
+    </div>
+    <div class="tab-content active" id="tab-decks">
+      <div style="font-size:.8rem;color:var(--t2);text-align:center;margin-bottom:.75rem;">Select your starting deck</div>
+      <div class="deck-grid" id="deck-grid"></div>
+      <div style="margin-top:1.2rem;display:flex;flex-direction:column;align-items:center;gap:.75rem;">
+        <div style="font-size:.75rem;color:var(--t3);letter-spacing:.08em;text-transform:uppercase;font-family:'Cinzel',serif;">Difficulty</div>
+        <div class="diff-row" id="diff-row">
+          <button class="diff-btn active" data-diff="easy"   onclick="selectDiff('easy')">
+            <span class="diff-icon">🌿</span>
+            <span class="diff-name">Easy</span>
+            <span class="diff-hint">CPU plays Basic cards only</span>
+          </button>
+          <button class="diff-btn" data-diff="medium" onclick="selectDiff('medium')">
+            <span class="diff-icon">⚔️</span>
+            <span class="diff-name">Medium</span>
+            <span class="diff-hint">CPU plays up to Rare cards</span>
+          </button>
+          <button class="diff-btn" data-diff="hard"   onclick="selectDiff('hard')">
+            <span class="diff-icon">💀</span>
+            <span class="diff-name">Hard</span>
+            <span class="diff-hint">CPU uses full deck + Legendaries</span>
+          </button>
+        </div>
+        <button class="btn primary" id="start-btn" onclick="startGame()" disabled>Begin Run</button>
+        <button class="btn" onclick="showScreen('mp-lobby-screen')" style="margin-top:-.2rem;">⚔ Play vs Friend</button>
+      </div>
+    </div>
+    <div class="tab-content" id="tab-collection">
+      <div class="coll-stats" id="coll-summary"></div>
+      <div id="coll-inner"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ BATTLE SCREEN ══ -->
+<div id="battle-screen" class="screen">
+  <div class="b-header">
+    <div class="r-badge" id="r-badge">Round 1</div>
+    <div class="hp-wrap"><div class="hp-label"><span>YOU</span><span id="p-hp-txt">20/20</span></div><div class="hp-bar"><div class="hp-fill p" id="p-hp-bar" style="width:100%"></div></div></div>
+    <div style="font-size:.9rem;opacity:.4;">VS</div>
+    <div class="hp-wrap"><div class="hp-label"><span id="cpu-name-label">CPU</span><span id="c-hp-txt">20/20</span></div><div class="hp-bar"><div class="hp-fill c" id="c-hp-bar" style="width:100%"></div></div></div>
+    <div class="luck-bar-wrap"><span style="font-size:.65rem;color:var(--special-l);">✦</span><div class="luck-bar"><div class="luck-fill" id="luck-fill" style="width:0%"></div></div><span style="font-size:.65rem;color:var(--t3);" id="luck-txt">0%</span></div>
+    <button class="btn xs info" onclick="showCollection()" style="margin-left:auto;">Collection</button>
+  </div>
+  <div class="meta-bar">
+    <span>📚 Deck: <b id="p-deck-cnt">0</b></span>
+    <span>🃏 Hand: <b id="p-hand-cnt">0</b>/7</span>
+    <span class="gold">⚙ <b id="p-gold">0</b></span>
+    <span>CPU deck: <b id="c-deck-cnt">0</b></span>
+    <span id="streak-display"></span>
+  </div>
+  <div class="active-bonuses" id="active-bonuses"></div>
+  <div class="cpu-zone">
+    <div class="zone-label">
+      <span id="cpu-name-zone">CPU</span>
+      <span class="cpu-behavior-tag" id="cpu-behavior-tag"></span>
+      <span id="diff-badge" style="font-size:.62rem;padding:1px 7px;border-radius:4px;margin-left:.4rem;font-family:'Cinzel',serif;font-weight:700;letter-spacing:.04em;"></span>
+      <span class="peek-badge" id="peek-badge" style="display:none">👁 Peek Active</span>
+    </div>
+    <div id="cpu-hand" style="display:flex;gap:.4rem;flex-wrap:wrap;justify-content:center;"></div>
+  </div>
+  <div class="field" id="battle-field">
+    <div class="slot" id="p-slot">Your Card</div>
+    <div class="vs" id="vs-divider">⚔</div>
+    <div class="slot" id="c-slot">CPU Card</div>
+  </div>
+  <!-- Solo effect display (shown instead of VS layout for self-contained cards) -->
+  <div id="solo-field" style="display:none;flex-direction:column;align-items:center;justify-content:center;gap:.75rem;padding:.75rem 1rem;position:relative;min-height:200px;">
+    <div id="solo-card-wrap" style="display:flex;flex-direction:column;align-items:center;gap:.5rem;"></div>
+    <div id="solo-effect-label" style="font-family:'Cinzel',serif;font-size:1rem;color:var(--gold);letter-spacing:.06em;text-align:center;max-width:300px;"></div>
+  </div>
+  <div class="effects-row" id="effects-row"></div>
+  <div class="p-zone">
+    <div class="zone-label">Your Hand</div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:.3rem;">
+      <div style="display:flex;align-items:center;gap:.4rem;font-size:.68rem;color:var(--t3);">
+        <span class="buff-slot-label">BUFF SLOT (1/round):</span>
+        <div id="buff-hand" class="buff-row"></div>
+      </div>
+      <div class="p-hand" id="p-hand"></div>
+    </div>
+    <div class="action-row">
+      <button class="btn sm primary" id="play-btn" onclick="playSelected()" disabled>Play Card</button>
+      <button class="btn sm" id="draw-btn" onclick="manualDraw()" disabled>Draw Card</button>
+      <button class="btn sm info" id="use-buff-btn" onclick="useSelectedBuff()" disabled style="display:none">Use Buff</button>
+    </div>
+  </div>
+  <div class="log" id="battle-log">Choose a card to play...</div>
+</div>
+
+<!-- ══ SHOP SCREEN ══ -->
+<div id="shop-screen" class="screen">
+  <div class="shop-title">The Wandering Shop</div>
+  <div class="shop-subtitle" id="shop-sub">Preparing for the next battle...</div>
+  <div style="display:flex;gap:1rem;font-size:.85rem;align-items:center;">
+    <span style="color:var(--t2);">Gold: <strong style="color:var(--gold);" id="shop-gold">0</strong> ⚙</span>
+    <span style="color:var(--t2);">Luck: <strong style="color:var(--special-l);" id="shop-luck">0</strong>%</span>
+  </div>
+  <div class="shop-grid" id="shop-grid"></div>
+  <div style="display:flex;gap:.75rem;flex-wrap:wrap;justify-content:center;">
+    <button class="btn" onclick="showCollection()">Browse Collection</button>
+    <button class="btn primary" onclick="continueRun()">Continue →</button>
+  </div>
+</div>
+
+<!-- ══ BONUS SCREEN ══ -->
+<div id="bonus-screen" class="screen">
+  <div class="bonus-title">✦ Choose a Permanent Bonus ✦</div>
+  <div style="font-size:.85rem;color:var(--t2);">This bonus lasts the entire run</div>
+  <div class="bonus-grid" id="bonus-grid"></div>
+  <button class="btn" id="skip-bonus-btn" onclick="skipBonus()">Skip</button>
+</div>
+
+<!-- ══ COLLECTION SCREEN ══ -->
+<div id="collection-screen" class="screen">
+  <div class="coll-title">Card Collection</div>
+  <div class="coll-stats" id="coll-stats2"></div>
+  <div class="coll-body" id="coll-body"></div>
+  <div style="margin-top:1rem;display:flex;gap:.75rem;flex-wrap:wrap;justify-content:center;" id="coll-actions">
+    <button class="btn" onclick="goBack()">← Back</button>
+  </div>
+</div>
+
+<!-- ══ GAME OVER ══ -->
+<div id="gameover-screen" class="screen">
+  <div class="go-title">Defeated</div>
+  <div style="font-size:1.1rem;color:var(--t2);" id="go-reason">You were overwhelmed...</div>
+  <div class="end-bonuses" id="go-bonuses"></div>
+  <div class="stats-box" id="go-stats"></div>
+  <button class="btn primary" onclick="goToStart()">Try Again</button>
+</div>
+
+<!-- ══ VICTORY ══ -->
+<div id="victory-screen" class="screen">
+  <div class="vic-title">Victory!</div>
+  <div style="font-size:1.1rem;color:var(--t2);">You conquered all opponents!</div>
+  <div class="end-bonuses" id="vic-bonuses"></div>
+  <div class="stats-box" id="vic-stats"></div>
+  <button class="btn primary" onclick="goToStart()">Play Again</button>
+</div>
+
+<!-- ══ TRIAL OVERLAY ══ -->
+<div id="trial-overlay">
+  <div class="trial-box">
+    <div class="trial-title">⚖️ The Trial</div>
+    <div class="trial-status" id="trial-status">Guess the CPU's card 3 times correctly — order doesn't matter</div>
+    <div class="trial-progress" id="trial-progress"></div>
+    <div style="font-size:.75rem;color:var(--t3);text-align:center;">CPU's cards (refresh after each play):</div>
+    <div class="trial-cpu-area" id="trial-cpu-area"></div>
+    <div class="trial-btn-row">
+      <button class="btn sm danger" onclick="trialGuess('rock')">🪨 Rock</button>
+      <button class="btn sm info"   onclick="trialGuess('paper')">📄 Paper</button>
+      <button class="btn sm success" onclick="trialGuess('scissors')">✂️ Scissors</button>
+    </div>
+    <div class="trial-log" id="trial-log">Make your first guess...</div>
+    <div id="trial-result-area"></div>
+  </div>
+</div>
+
+<!-- ══ MP LOBBY SCREEN ══ -->
+<div id="mp-lobby-screen" class="screen">
+  <div class="game-logo" style="margin-bottom:.5rem;">
+    <h1 style="font-size:clamp(1.4rem,5vw,2.6rem);">⚔ Duel a Friend</h1>
+    <p>Peer-to-peer — no accounts, no servers</p>
+  </div>
+  <div id="mp-conn-status" style="display:flex;align-items:center;gap:.4rem;font-size:.78rem;color:var(--t2);">
+    <span class="mp-conn-dot waiting" id="mp-dot"></span>
+    <span id="mp-conn-label">Connecting to relay…</span>
+  </div>
+
+  <div style="display:flex;gap:1rem;flex-wrap:wrap;justify-content:center;width:100%;max-width:760px;">
+    <!-- HOST -->
+    <div class="mp-section">
+      <h3>🏠 Host a Game</h3>
+      <p style="font-size:.78rem;color:var(--t3);line-height:1.5;">Create a room and share the code with your friend. They join with that code.</p>
+      <div style="font-size:.75rem;color:var(--t2);">Choose your deck first:</div>
+      <select id="mp-deck-select" style="background:var(--s2);border:1px solid var(--border2);color:var(--t1);padding:.4rem .6rem;border-radius:6px;font-family:inherit;font-size:.82rem;"></select>
+      <select id="mp-hand-select" style="background:var(--s2);border:1px solid var(--border2);color:var(--t1);padding:.4rem .6rem;border-radius:6px;font-family:inherit;font-size:.82rem;">
+        <option value="5">5 cards per hand</option>
+        <option value="7">7 cards per hand</option>
+      </select>
+      <button class="btn primary" id="mp-host-btn" onclick="mpHost()" disabled>Generate Room Code</button>
+      <div id="mp-host-code-area" style="display:none;text-align:center;">
+        <div class="mp-room-code" id="mp-host-code">—</div>
+        <div style="font-size:.72rem;color:var(--t3);margin-top:.3rem;">Share this code with your friend</div>
+        <button class="btn xs" onclick="mpCopyCode()" style="margin-top:.4rem;">Copy Code</button>
+      </div>
+      <div class="mp-status" id="mp-host-status"></div>
+    </div>
+
+    <!-- JOIN -->
+    <div class="mp-section">
+      <h3>🚪 Join a Game</h3>
+      <p style="font-size:.78rem;color:var(--t3);line-height:1.5;">Enter the 4-letter code your friend generated to connect.</p>
+      <div style="font-size:.75rem;color:var(--t2);">Choose your deck first:</div>
+      <select id="mp-join-deck-select" style="background:var(--s2);border:1px solid var(--border2);color:var(--t1);padding:.4rem .6rem;border-radius:6px;font-family:inherit;font-size:.82rem;"></select>
+      <input id="mp-join-code" maxlength="4" placeholder="ABCD" style="background:var(--s2);border:1px solid var(--border2);color:var(--t1);padding:.5rem .8rem;border-radius:6px;font-family:'Cinzel',serif;font-size:1.4rem;letter-spacing:.2em;text-align:center;text-transform:uppercase;width:100%;outline:none;" oninput="this.value=this.value.toUpperCase()" />
+      <button class="btn" id="mp-join-btn" onclick="mpJoin()" disabled>Join Game</button>
+      <div class="mp-status" id="mp-join-status"></div>
+    </div>
+  </div>
+
+  <button class="btn" onclick="showScreen('start')">← Back to Solo</button>
+</div>
+
+<!-- ══ MP BATTLE SCREEN ══ -->
+<div id="mp-battle-screen" class="screen">
+  <!-- Header -->
+  <div class="b-header">
+    <div class="r-badge" id="mp-round-badge">Round 1</div>
+    <div class="mp-hp-block">
+      <div class="mp-hp-name">YOU <span id="mp-p-hp-txt">20/20</span></div>
+      <div class="mp-hp-bar"><div class="mp-hp-fill" id="mp-p-hp-fill" style="width:100%;background:linear-gradient(90deg,var(--scissors-d),var(--scissors-l))"></div></div>
+    </div>
+    <div style="font-size:.9rem;opacity:.4;">VS</div>
+    <div class="mp-hp-block">
+      <div class="mp-hp-name"><span id="mp-opp-name">Opponent</span> <span id="mp-c-hp-txt">20/20</span></div>
+      <div class="mp-hp-bar"><div class="mp-hp-fill" id="mp-c-hp-fill" style="width:100%;background:linear-gradient(90deg,var(--rock-d),var(--rock-l))"></div></div>
+    </div>
+    <button class="btn xs danger" onclick="mpQuit()" style="margin-left:auto;">Quit</button>
+  </div>
+
+  <!-- Opponent's played card slot (face down until reveal) -->
+  <div style="display:flex;flex-direction:column;align-items:center;padding:.5rem .5rem 0;">
+    <div class="mp-player-label" id="mp-opp-zone-label">Opponent's card</div>
+    <div class="mp-slot" id="mp-opp-slot">Waiting…</div>
+  </div>
+
+  <!-- VS area -->
+  <div class="mp-vs-area">
+    <div style="text-align:center;">
+      <div class="mp-player-label">Your card</div>
+      <div class="mp-slot" id="mp-p-slot">Select below</div>
+    </div>
+    <div style="font-family:'Cinzel',serif;font-size:1.2rem;color:var(--gold);opacity:.6;">⚔</div>
+    <div style="text-align:center;" id="mp-result-area"></div>
+  </div>
+
+  <!-- Log -->
+  <div class="mp-log" id="mp-log">Waiting for connection...</div>
+
+  <!-- Player hand -->
+  <div class="p-zone" style="flex:1;">
+    <div class="zone-label">Your Hand</div>
+    <div class="mp-hand" id="mp-p-hand"></div>
+    <div class="action-row">
+      <button class="btn sm primary" id="mp-play-btn" onclick="mpPlayCard()" disabled>Lock In Card</button>
+      <button class="btn sm" id="mp-draw-btn" onclick="mpDrawCard()" disabled>Draw Card</button>
+    </div>
+  </div>
+</div>
+
+</div><!-- #app -->
+
+<!-- ══ COIN FLIP OVERLAY ══ -->
+<div id="coin-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:300;flex-direction:column;align-items:center;justify-content:center;gap:1rem;padding:1.5rem;">
+  <div style="font-family:'Cinzel',serif;font-size:1.5rem;font-weight:900;color:var(--gold);text-shadow:0 0 30px var(--glow);">🃏 The Jester's Gambit</div>
+  <div id="coin-subtitle" style="font-size:.85rem;color:var(--t2);text-align:center;max-width:360px;line-height:1.6;">The Jester demands a wager. Choose your fate...</div>
+  <!-- Choice buttons -->
+  <div id="coin-choice-row" style="display:flex;gap:1rem;flex-wrap:wrap;justify-content:center;">
+    <button class="btn primary" style="font-size:1.1rem;padding:.8rem 2rem;" onclick="jesterPick('heads')">🌕 Heads</button>
+    <button class="btn danger"  style="font-size:1.1rem;padding:.8rem 2rem;" onclick="jesterPick('tails')">🌑 Tails</button>
+  </div>
+  <!-- Canvas for coin animation -->
+  <canvas id="coin-canvas" width="160" height="160" style="display:none;border-radius:50%;"></canvas>
+  <div id="coin-result-label" style="font-family:'Cinzel',serif;font-size:1.4rem;font-weight:900;text-align:center;min-height:2.5rem;"></div>
+  <div id="coin-luck-label" style="font-size:.78rem;color:var(--special-l);text-align:center;min-height:1.2rem;"></div>
+  <div id="coin-outcome-btn" style="display:none;">
+    <button class="btn primary" onclick="closeCoinOverlay()">Continue</button>
+  </div>
+</div>
+<div id="hoarder-screen" class="screen" style="background:radial-gradient(ellipse at 50% 0%,rgba(243,156,18,.06),transparent 50%),var(--bg);align-items:center;padding:1.5rem 1rem;gap:.75rem;">
+  <div style="font-family:'Cinzel',serif;font-size:1.6rem;color:var(--gold);text-align:center;">🏚️ Stockpile</div>
+  <div style="font-size:.85rem;color:var(--t2);text-align:center;max-width:500px;line-height:1.6;">You defeated the opponent. Choose up to 3 of their cards to add permanently to your deck.</div>
+  <div style="font-size:.82rem;color:var(--scissors-l);text-align:center;font-family:'Cinzel',serif;" id="hoarder-picks-left">Picks remaining: 3</div>
+  <div id="hoarder-card-grid" style="display:flex;flex-wrap:wrap;gap:.5rem;justify-content:center;max-width:720px;overflow-y:auto;max-height:55vh;padding:.5rem;"></div>
+  <div style="display:flex;gap:.75rem;flex-wrap:wrap;justify-content:center;margin-top:.5rem;">
+    <button class="btn" onclick="afterHoarderPick()">Skip</button>
+    <button class="btn primary" id="hoarder-confirm-btn" onclick="confirmHoarderPicks()" disabled>Confirm Picks</button>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════
+//  CARD DEFINITIONS
+// ═══════════════════════════════════════════════════
+const CARDS = {
+  // ─── BASIC ROCKS ───
+  rock3:     {type:'rock',    power:3, name:'Pebble',    icon:'🪨', rarity:'common',   ability:null,              isbuff:false},
+  rock4:     {type:'rock',    power:4, name:'Stone',     icon:'🪨', rarity:'common',   ability:null,              isbuff:false},
+  rock5:     {type:'rock',    power:5, name:'Boulder',   icon:'⛏️', rarity:'uncommon', ability:null,              isbuff:false},
+  rock6:     {type:'rock',    power:6, name:'Monolith',  icon:'🗿', rarity:'rare',     ability:null,              isbuff:false},
+  // ─── BASIC PAPERS ───
+  paper3:    {type:'paper',   power:3, name:'Scroll',    icon:'📄', rarity:'common',   ability:null,              isbuff:false},
+  paper4:    {type:'paper',   power:4, name:'Tome',      icon:'📜', rarity:'common',   ability:null,              isbuff:false},
+  paper5:    {type:'paper',   power:5, name:'Codex',     icon:'📖', rarity:'uncommon', ability:null,              isbuff:false},
+  paper6:    {type:'paper',   power:6, name:'Grimoire',  icon:'📗', rarity:'rare',     ability:null,              isbuff:false},
+  // ─── BASIC SCISSORS ───
+  scissors3: {type:'scissors',power:3, name:'Snips',     icon:'✂️', rarity:'common',   ability:null,              isbuff:false},
+  scissors4: {type:'scissors',power:4, name:'Shears',    icon:'✂️', rarity:'common',   ability:null,              isbuff:false},
+  scissors5: {type:'scissors',power:5, name:'Blades',    icon:'⚔️', rarity:'uncommon', ability:null,              isbuff:false},
+  scissors6: {type:'scissors',power:6, name:'Reaper',    icon:'🔪', rarity:'rare',     ability:null,              isbuff:false},
+
+  // ─── SPECIAL PLAY CARDS ───
+  iron_will:   {type:'special',power:3,name:'Iron Will',   icon:'🛡️',rarity:'uncommon',ability:'Rock +1 dmg for 3 turns',    isbuff:false,effect:'ironWill'},
+  earthquake:  {type:'special',power:5,name:'Earthquake',  icon:'💥',rarity:'rare',    ability:'Beats all except Paper',      isbuff:false,effect:'earthquake'},
+  fortify:     {type:'special',power:2,name:'Fortify',     icon:'🏰',rarity:'common',  ability:'Heal 3 HP (no battle)',       isbuff:false,effect:'healS'},
+  swift_cut:   {type:'special',power:4,name:'Swift Cut',   icon:'⚡',rarity:'uncommon',ability:'Draw 2 cards (no battle)',    isbuff:false,effect:'drawExtra'},
+  steal:       {type:'special',power:3,name:'Steal',       icon:'🎭',rarity:'uncommon',ability:'Take 2 gold (no battle)',     isbuff:false,effect:'steal'},
+  mend:        {type:'special',power:2,name:'Mend',        icon:'💚',rarity:'uncommon',ability:'Heal 5 HP (no battle)',       isbuff:false,effect:'healL'},
+  arcane_wrap: {type:'special',power:4,name:'Arcane Wrap', icon:'🌀',rarity:'rare',    ability:'Paper auto-wins this turn',   isbuff:false,effect:'arcaneWrap'},
+  twin_blade:  {type:'special',power:6,name:'Twin Blade',  icon:'⚔️',rarity:'rare',    ability:'Play as Scissors +2 power',   isbuff:false,effect:'twinBlade'},
+  rock_lord:   {type:'special',power:6,name:'Rock Lord',   icon:'🗿',rarity:'rare',    ability:'Rock immune to Paper',        isbuff:false,effect:'rockLord'},
+  ink_flood:   {type:'special',power:5,name:'Ink Flood',   icon:'🌊',rarity:'rare',    ability:'Deal 5 flat damage',          isbuff:false,effect:'inkFlood'},
+  mirror_card: {type:'special',power:4,name:'Mirror',      icon:'🪞',rarity:'uncommon',ability:'Copy CPU card type this turn', isbuff:false,effect:'mirror'},
+  triple_strike:{type:'special',power:5,name:'Triple Strike',icon:'⚡',rarity:'legendary',ability:'Auto-win; deals max power +2',isbuff:false,effect:'tripleStrike'},
+
+  // ─── LEGENDARY PLAY CARDS ───
+  the_jester:  {type:'special',power:0,name:'The Jester',  icon:'🃏',rarity:'legendary',ability:'Coin flip: win or lose 20% HP', isbuff:false,effect:'jester'},
+  chaos_hand:  {type:'special',power:4,name:'Chaos Hand',  icon:'🎲',rarity:'legendary',ability:'Random symbol — still fights CPU', isbuff:false,effect:'chaosHand'},
+  abs_paper:   {type:'special',power:7,name:'Absolute Paper',icon:'📜',rarity:'legendary',ability:'Paper auto-wins, deals 7 dmg',  isbuff:false,effect:'absPaper'},
+  temporal:    {type:'special',power:0,name:'Temporal Loop',icon:'⏳',rarity:'legendary',ability:'Replay last winning hit',         isbuff:false,effect:'temporal'},
+  pat_breaker: {type:'special',power:5,name:'Pattern Breaker',icon:'🔀',rarity:'legendary',ability:'Sets trap: CPU repeat = auto-win',isbuff:false,effect:'patBreaker'},
+  dominance:   {type:'special',power:4,name:'Dominance',   icon:'👑',rarity:'legendary',ability:'Ties = wins for 3 turns',         isbuff:false,effect:'dominance'},
+
+  // ─── BUFF CARDS (played from buff hand, 1 per round) ───
+  reinforced_paper:{type:'buff',power:0,name:'Reinf. Paper', icon:'🛡️',rarity:'common',  ability:"Paper can't lose to Rock twice in a row", isbuff:true,effect:'reinforcedPaper'},
+  sharp_scissors:  {type:'buff',power:0,name:'Sharp Scissors',icon:'✂️',rarity:'common',  ability:'Win with Scissors → draw 1 card',        isbuff:true,effect:'sharpScissors'},
+  double_down:     {type:'buff',power:0,name:'Double Down',   icon:'🎯',rarity:'common',  ability:'Win=deal double dmg, Lose=take double dmg',isbuff:true,effect:'doubleDown'},
+  counter_study:   {type:'buff',power:0,name:'Counter Study', icon:'📋',rarity:'uncommon',ability:'On lose, copy their symbol next turn',     isbuff:true,effect:'counterStudy'},
+  momentum:        {type:'buff',power:0,name:'Momentum',      icon:'💨',rarity:'uncommon',ability:'After a win, NEXT card deals 2× power',    isbuff:true,effect:'momentum'},
+  echo_play:       {type:'buff',power:0,name:'Echo Play',     icon:'🔁',rarity:'uncommon',ability:'Replay your last card\'s symbol type',     isbuff:true,effect:'echoPlay'},
+  mirror_trap:     {type:'buff',power:0,name:'Mirror Trap',   icon:'🪤',rarity:'uncommon',ability:'If CPU plays same symbol as last turn → auto-win', isbuff:true,effect:'mirrorTrap'},
+  predict_engine:  {type:'buff',power:0,name:'Predict Engine',icon:'🔮',rarity:'rare',    ability:'Guess CPU type: right=auto-win, wrong=lose half HP', isbuff:true,effect:'predictEngine'},
+  // ─── NEW BUFF CARDS (converted from play) ───
+  shatter_rock:    {type:'buff',power:0,name:'Shatter Rock',  icon:'💎',rarity:'rare',    ability:'This turn: Rock beats Paper',            isbuff:true,effect:'shatterRock'},
+  shear_force:     {type:'buff',power:0,name:'Shear Force',   icon:'🌪️',rarity:'rare',    ability:'This turn: Scissors beats everything',   isbuff:true,effect:'shearForce'},
+  folding_tech:    {type:'buff',power:0,name:'Folding Tech',  icon:'📰',rarity:'rare',    ability:'This turn: Paper beats Scissors',        isbuff:true,effect:'foldingTech'},
+
+  // ─── RARE PLAY CARDS ───
+  reversal:     {type:'special',power:4,name:'Reversal',       icon:'🔄',rarity:'rare',    ability:'If you lose this turn, flip result to win', isbuff:false,effect:'reversal'},
+  copycat:      {type:'special',power:3,name:'Copycat',        icon:'🐱',rarity:'rare',    ability:'If you lose, copy that card into your deck',isbuff:false,effect:'copycat'},
+  gamblers_hand:{type:'special',power:0,name:"Gambler's Hand", icon:'🎰',rarity:'rare',    ability:'Roll 2 symbols vs CPU — best result counts', isbuff:false,effect:'gamblersHand'},
+  pattern_break:{type:'special',power:4,name:'Pattern Break',  icon:'🔓',rarity:'rare',    ability:'If CPU repeated last symbol: deal both card powers as dmg', isbuff:false,effect:'patternBreak'},
+
+  // ─── LEGENDARY PLAY CARDS (new) ───
+  time_loop:    {type:'special',power:0,name:'Time Loop',      icon:'⏰',rarity:'legendary',ability:'Replay the exact previous round',          isbuff:false,effect:'timeLoop',
+    lore:'"The second time hurts just as much." — Arena veteran'},
+  fate_twist:   {type:'special',power:0,name:'Fate Twist',     icon:'🌀',rarity:'legendary',ability:'If you lose, reroll your symbol once',      isbuff:false,effect:'fateTwist',
+    lore:'"Destiny is a suggestion. I prefer to negotiate." — The Gambler'},
+  master_three: {type:'special',power:5,name:'Master of Three',icon:'🔱',rarity:'legendary',ability:'Play all 3 symbols — take the best result', isbuff:false,effect:'masterThree',
+    lore:'"Why choose one path when you can walk all three?" — The Grandmaster'},
+  paradox_card: {type:'special',power:4,name:'Paradox',        icon:'♾️',rarity:'legendary',ability:'Both players win: both take card damage',   isbuff:false,effect:'paradox',
+    lore:'"In the space between winning and losing, truth lives." — The Philosopher'},
+  trial_card:   {type:'special',power:5,name:'The Trial',      icon:'⚖️',rarity:'legendary',ability:'Opens the courtroom: guess CPU 3/6 times for big rewards', isbuff:false,effect:'trialCard',
+    lore:'"Order in the court. The accused will be judged." — The Arbiter'},
+
+  // ─── NEW COMMON CARDS ───
+  pebble_toss:  {type:'special',power:3,name:'Pebble Toss',    icon:'🪨',rarity:'common',  ability:'Play as Rock. If you lose, draw 1 card.',  isbuff:false,effect:'pebbleToss',
+    lore:'"A losing throw is still a throw." — Apprentice notes'},
+  clean_cut:    {type:'special',power:4,name:'Clean Cut',      icon:'✂️',rarity:'common',  ability:'Play as Scissors. Win → CPU discards 1 card.',isbuff:false,effect:'cleanCut',
+    lore:'"Leave no loose ends." — The Trickster'},
+  paper_shield: {type:'buff',   power:0,name:'Paper Shield',   icon:'🛡️',rarity:'common',  ability:'Losing with Paper this turn becomes a draw.', isbuff:true,effect:'paperShield',
+    lore:'"Paper bends but does not break." — Old proverb'},
+  hesitation:   {type:'special',power:3,name:'Hesitation',     icon:'🤔',rarity:'common',  ability:'Play as Rock. On a tie, draw 1 card.',     isbuff:false,effect:'hesitation',
+    lore:'"A pause can save a life. Or waste one." — Street sage'},
+  sharp_reflex: {type:'buff',   power:0,name:'Sharp Reflex',   icon:'⚡',rarity:'common',  ability:'If you lose this turn, that symbol cannot beat you next turn.', isbuff:true,effect:'sharpReflex',
+    lore:'"Pain teaches. Once." — Sparring master'},
+  scramble:     {type:'special',power:0,name:'Scramble',       icon:'🔀',rarity:'common',  ability:'Shuffle your deck and draw 1 card.',       isbuff:false,effect:'scramble',
+    lore:'"Sometimes chaos is the only strategy." — The Chaos Mage'},
+  stone_wall:   {type:'special',power:4,name:'Stone Wall',     icon:'🧱',rarity:'common',  ability:'Play as Rock. On a tie, draw 1 extra next round.', isbuff:false,effect:'stoneWall',
+    lore:'"Unmovable. Unbreakable. Patient." — The Warrior'},
+  careful_plan: {type:'special',power:0,name:'Careful Planning',icon:'📋',rarity:'common', ability:'Look at top 3 deck cards and reorder them.', isbuff:false,effect:'carefulPlanning',
+    lore:'"Five moves ahead. At minimum." — The Analyst'},
+  practice_cut: {type:'buff',   power:0,name:'Practice Cut',   icon:'✂️',rarity:'common',  ability:'Scissors wins all ties this turn.',         isbuff:true,effect:'practiceCut',
+    lore:'"Repetition breeds precision." — Training manual'},
+  field_notes:  {type:'special',power:0,name:'Field Notes',    icon:'📓',rarity:'common',  ability:"Reveals the CPU's last 2 played symbols.",  isbuff:false,effect:'fieldNotes',
+    lore:'"Knowledge is the sharpest weapon." — The Analyst'},
+
+  // ─── NEW UNCOMMON CARDS ───
+  switchblade:  {type:'special',power:4,name:'Switchblade',    icon:'⚔️',rarity:'uncommon',ability:'Play as Scissors. If losing, may switch to Rock.',isbuff:false,effect:'switchblade',
+    lore:'"What you see isn\'t always what you get." — The Trickster'},
+  rockslide:    {type:'special',power:5,name:'Rockslide',      icon:'🏔️',rarity:'uncommon',ability:'Play as Rock. Win → Rock auto-plays next turn.',isbuff:false,effect:'rockslide',
+    lore:'"One stone starts an avalanche." — The Aggressor'},
+  folding_strat:{type:'buff',   power:0,name:'Folding Strategy',icon:'📄',rarity:'uncommon',ability:'Win with Paper this turn → draw 2 cards.',  isbuff:true,effect:'foldingStrat',
+    lore:'"Every page is a weapon if you fold it right." — Paper master'},
+  trap_setup:   {type:'buff',   power:0,name:'Trap Setup',     icon:'🪤',rarity:'uncommon',ability:'CPU plays same symbol as last turn → auto-win.', isbuff:true,effect:'trapSetup',
+    lore:'"Let them repeat their mistake." — The Tactician'},
+  disruption:   {type:'buff',   power:0,name:'Disruption',     icon:'🌩️',rarity:'uncommon',ability:"CPU can't play the same symbol as last turn.", isbuff:true,effect:'disruption',
+    lore:'"Break their rhythm. Break their will." — Arena captain'},
+  wild_throw:   {type:'special',power:0,name:'Wild Throw',     icon:'🎲',rarity:'uncommon',ability:'Random symbol. Wins deal double damage.',   isbuff:false,effect:'wildThrow',
+    lore:'"Chaos, aimed just right, is unstoppable." — The Shapeshifter'},
+  focus_card:   {type:'special',power:0,name:'Focus',          icon:'🎯',rarity:'uncommon',ability:'Discard 1 card to reveal CPU\'s next card.',  isbuff:false,effect:'focusCard',
+    lore:'"Clarity costs something. It is always worth it." — The Grandmaster'},
+  chain_reaction:{type:'buff',  power:0,name:'Chain Reaction', icon:'🔗',rarity:'uncommon',ability:'Win twice in a row → draw 3 cards.',        isbuff:true,effect:'chainReaction',
+    lore:'"Victory begets victory. Feed the chain." — The Aggressor'},
+  adaptation:   {type:'special',power:3,name:'Adaptation',     icon:'🌱',rarity:'uncommon',ability:'After a loss, a random card in hand gains +1 power.', isbuff:false,effect:'adaptation',
+    lore:'"What doesn\'t kill you makes your deck stronger." — Survivor'},
+  symbol_lock:  {type:'buff',   power:0,name:'Symbol Lock',    icon:'🔒',rarity:'uncommon',ability:'A random CPU symbol is locked out next turn.',isbuff:true,effect:'symbolLock',
+    lore:'"Remove their options. Remove their hope." — The Strategist'},
+
+  // ─── NEW RARE CARDS ───
+  triple_mind:  {type:'special',power:0,name:'Triple Mind Game',icon:'🧠',rarity:'rare',   ability:'Guess CPU symbol: right→draw 3, wrong→discard 2.', isbuff:false,effect:'tripleMind',
+    lore:'"Read them wrong once. Never again." — The Grandmaster'},
+  swap_trick:   {type:'special',power:4,name:'Swap Trick',     icon:'🔃',rarity:'rare',    ability:"Your symbol and CPU's swap before resolving.", isbuff:false,effect:'swapTrick',
+    lore:'"The hand is quicker than the eye." — The Trickster'},
+  forced_choice:{type:'buff',   power:0,name:'Forced Choice',  icon:'🎰',rarity:'rare',    ability:'CPU plays a random symbol this turn.',      isbuff:true,effect:'forcedChoice',
+    lore:'"I didn\'t give you a choice. I took it." — The Boss'},
+  momentum_break:{type:'special',power:5,name:'Momentum Breaker',icon:'🛑',rarity:'rare',  ability:'CPU won last round → you auto-win this round.', isbuff:false,effect:'momentumBreak',
+    lore:'"Stop their streak before it becomes unstoppable." — Arena coach'},
+  perfect_cut:  {type:'special',power:5,name:'Perfect Cut',    icon:'💠',rarity:'rare',    ability:'Scissors wins → permanently remove 1 card from your deck.', isbuff:false,effect:'perfectCut',
+    lore:'"Precision over power. Always." — The Minimalist'},
+  boulder_crash:{type:'special',power:6,name:'Boulder Crash',  icon:'💥',rarity:'rare',    ability:'Rock card. CPU played Paper last round → double damage.', isbuff:false,effect:'boulderCrash',
+    lore:'"Punish their arrogance." — The Aggressor'},
+  secret_tech:  {type:'special',power:4,name:'Secret Technique',icon:'🥷',rarity:'rare',   ability:'Symbol hidden until CPU commits — resolves normally.', isbuff:false,effect:'secretTech',
+    lore:'"The best secrets are the ones kept until too late." — Shadow master'},
+  echo_chamber: {type:'buff',   power:0,name:'Echo Chamber',   icon:'🔊',rarity:'rare',    ability:"Repeat last card's effect this turn.",      isbuff:true,effect:'echoChamber',
+    lore:'"History has a habit of repeating." — The Analyst'},
+  strat_rewrite:{type:'special',power:4,name:'Strategy Rewrite',icon:'📝',rarity:'rare',   ability:"Change your symbol to counter CPU's last 2 symbols.", isbuff:false,effect:'stratRewrite',
+    lore:'"A plan is only as good as your willingness to change it." — The Grandmaster'},
+  dominant_cycle:{type:'special',power:5,name:'Dominant Cycle',icon:'🔄',rarity:'rare',    ability:'Played Rock→Paper→Scissors in order → auto-win this round.', isbuff:false,effect:'dominantCycle',
+    lore:'"The cycle is complete. Victory is inevitable." — The Collector'},
+
+  // ─── NEW LEGENDARY CARDS ───
+  schrodingers: {type:'special',power:6,name:"Schrödinger's Move",icon:'📦',rarity:'legendary',ability:'All three symbols until CPU reveals — best result used.', isbuff:false,effect:'schrodingers',
+    lore:'"Until observed, all outcomes coexist." — The Chaos Mage'},
+  time_thief:   {type:'special',power:5,name:'The Time Thief',  icon:'⏱️',rarity:'legendary',ability:"Steal CPU's symbol; force them to play random.",isbuff:false,effect:'timeThief',
+    lore:'"I borrowed your future. I\'ll keep it." — The Shapeshifter'},
+  abs_mirror:   {type:'special',power:5,name:'Absolute Mirror', icon:'🪞',rarity:'legendary',ability:"Your symbol becomes the exact counter to CPU's symbol.", isbuff:false,effect:'absMirror',
+    lore:'"I don\'t predict. I react perfectly." — The Minimalist'},
+  the_dealer:   {type:'special',power:0,name:'The Dealer',      icon:'🃏',rarity:'legendary',ability:'Draw 3 random cards and play all — best result counts.', isbuff:false,effect:'theDealer',
+    lore:'"The house always wins. I am the house." — The Collector'},
+  fate_engine:  {type:'special',power:0,name:'Fate Engine',     icon:'⚙️',rarity:'legendary',ability:'Each round after: 1-2=random, 3-4=ties win, 5-6=auto-win.', isbuff:false,effect:'fateEngine',
+    lore:'"I wound the machine. Now we both answer to it." — The Chaos Mage'},
+};
+
+// ─── DECK TEMPLATES ───
+const DECK_DEFS = {
+  warrior:    {name:'Warrior',    icon:'⛏️',perk:'+2 Rock power cards',  locked:false,  color:'rock',
+    cards:['rock3','rock3','rock4','rock4','rock5','rock5','rock6','paper3','paper4','scissors3','scissors4','iron_will','iron_will','fortify','fortify','reinforced_paper']},
+  trickster:  {name:'Trickster',  icon:'✂️',perk:'Speed & steal cards',  locked:false,  color:'scissors',
+    cards:['scissors3','scissors3','scissors4','scissors4','scissors5','scissors5','scissors6','rock3','paper3','paper4','swift_cut','swift_cut','steal','sharp_scissors','sharp_scissors','echo_play']},
+  sage:       {name:'Sage',       icon:'📜',perk:'Healing & foresight',  locked:false,  color:'paper',
+    cards:['paper3','paper3','paper4','paper4','paper5','paper5','paper6','rock3','scissors3','scissors4','mend','mend','arcane_wrap','reinforced_paper','counter_study','predict_engine']},
+  brawler:    {name:'Brawler',    icon:'👊',perk:'Rock 30% more, tie wins',locked:false, color:'rock',
+    cards:['rock3','rock3','rock3','rock4','rock4','rock4','rock5','rock5','rock6','paper3','scissors3','iron_will','iron_will','fortify','double_down','double_down']},
+  tactician:  {name:'Tactician',  icon:'🧠',perk:'Prediction 2× common', locked:false,  color:'paper',
+    cards:['paper3','paper4','paper5','rock3','rock4','scissors3','scissors4','predict_engine','predict_engine','counter_study','counter_study','mirror_trap','mirror_trap','momentum','arcane_wrap','mend']},
+  gambler:    {name:'Gambler',    icon:'🎲',perk:'Legendary +5%, chaos',  locked:false,  color:'gold',
+    cards:['rock3','paper3','scissors3','rock4','paper4','scissors4','rock5','paper5','scissors5','the_jester','chaos_hand','double_down','double_down','steal','steal','momentum']},
+  strategist: {name:'Strategist', icon:'♟️',perk:'+10% Rare chance, type-override buffs', locked:true, color:'special',
+    lockDesc:'Win any run to unlock.',
+    cards:['rock4','rock5','paper4','paper5','scissors4','scissors5','rock6','paper6','scissors6','shatter_rock','shear_force','folding_tech','mirror_card','mirror_trap','momentum','predict_engine']},
+  combo:      {name:'Combo Artist',icon:'🔗',perk:'Combo cards +40%',     locked:true,   color:'rock',
+    lockDesc:'Win any run to unlock.',
+    cards:['rock3','rock4','scissors3','scissors4','paper3','paper4','triple_strike','triple_strike','double_down','double_down','sharp_scissors','sharp_scissors','echo_play','echo_play','momentum','momentum']},
+  hoarder:    {name:'The Hoarder', icon:'🏚️',perk:'Stockpile — no shop, claim enemy cards',locked:true, color:'hoarder',
+    lockDesc:'Defeat 10 opponents in one run without ever buying from the shop.',
+    cards:['rock3','rock3','rock4','paper3','paper3','paper4','scissors3','scissors3','scissors4','rock4','paper4','scissors4','fortify','mend','reversal','copycat','pattern_break','gamblers_hand']},
+  phantom:    {name:'The Phantom', icon:'👻',perk:'Survive on 1 HP once per fight',locked:false, color:'special',
+    cards:['scissors3','scissors4','scissors5','paper3','paper4','paper5','rock3','rock4','mirror_card','mirror_card','echo_play','echo_play','fate_twist','reversal','copycat','mend','counter_study','momentum']},
+  berserker:  {name:'Berserker',   icon:'🔥',perk:'+1 dmg per 5 HP lost this fight', locked:false, color:'rock',
+    cards:['rock4','rock4','rock5','rock5','rock6','scissors4','scissors5','paper3','iron_will','iron_will','double_down','double_down','fortify','shatter_rock','twin_blade','earthquake','rock3','rock3']},
+  analyst:    {name:'The Analyst', icon:'🔬',perk:'See CPU\'s last 2 symbols always', locked:false, color:'paper',
+    cards:['rock3','rock4','paper3','paper4','scissors3','scissors4','careful_plan','careful_plan','focus_card','field_notes','field_notes','strat_rewrite','counter_study','mirror_trap','predict_engine','mend']},
+  aggressor:  {name:'The Aggressor',icon:'⚡',perk:'Win with Rock → draw 1 card', locked:false, color:'rock',
+    cards:['rock4','rock4','rock5','rock5','rock6','rock6','paper3','scissors3','scissors4','rockslide','rockslide','boulder_crash','iron_will','iron_will','momentum','double_down']},
+  chaos_mage: {name:'The Chaos Mage',icon:'🌀',perk:'Random cards appear 30% more in rewards', locked:true, color:'hoarder',
+    lockDesc:'Win a run using at least 5 random-effect cards.',
+    cards:['rock3','paper3','scissors3','rock4','paper4','scissors4','chaos_hand','wild_throw','gamblers_hand','gamblers_hand','fate_engine','the_jester','scramble','scramble','disruption','symbol_lock']},
+  grandmaster:{name:'The Grandmaster',icon:'♛',perk:'Every 3rd round: peek CPU symbol or change yours', locked:true, color:'special',
+    lockDesc:'Defeat 100 total opponents across all runs.',
+    cards:['rock3','rock4','paper3','paper4','scissors3','scissors4','predict_engine','predict_engine','strat_rewrite','strat_rewrite','focus_card','focus_card','trap_setup','abs_mirror','mend','fortify']},
+  minimalist: {name:'The Minimalist',icon:'⬜',perk:'6 cards or fewer → ties count as wins', locked:true, color:'paper',
+    lockDesc:'Win a run with 10 or fewer cards in your deck.',
+    cards:['rock4','paper4','scissors4','perfect_cut','perfect_cut','strat_rewrite','abs_mirror','mend']},
+  collector:  {name:'The Collector',icon:'📚',perk:'Gain 2 cards instead of 1 after each battle', locked:true, color:'scissors',
+    lockDesc:'Own 50 different cards across all runs.',
+    cards:['rock4','rock5','paper4','paper5','scissors4','scissors5','rock4','paper4','scissors4','paper5','scramble','chain_reaction','chain_reaction','echo_chamber','the_dealer','mend']},
+  shapeshifter:{name:'The Shapeshifter',icon:'🎭',perk:'Symbol randomly changes once before reveal', locked:true, color:'hoarder',
+    lockDesc:'Win 5 runs using random-effect cards.',
+    cards:['rock3','paper3','scissors3','rock4','paper4','scissors4','wild_throw','wild_throw','gamblers_hand','forced_choice','forced_choice','schrodingers','scramble','disruption','symbol_lock','chaos_hand']},
+  the_boss_deck:{name:'The Boss',   icon:'💀',perk:'First round of every battle is a tie', locked:true, color:'rock',
+    lockDesc:'Defeat every boss in the game at least once.',
+    cards:['rock4','rock5','paper4','paper5','scissors4','scissors5','momentum_break','momentum_break','triple_mind','triple_mind','dominance','fate_engine','iron_will','iron_will','double_down','double_down']},
+};
+
+// ─── CPU REGULAR OPPONENTS ───
+const CPU_ROSTER = [
+  {name:'The Apprentice', behavior:'random',  hp:18, deck:['rock3','paper3','scissors3','rock3','paper4','scissors4','rock4','paper3','scissors3','rock3','paper3','scissors4'],
+   intro:'...stares at their cards nervously.', taunt:'I\'ve been training for this!', loss:'How did that happen?!'},
+  {name:'The Brute',      behavior:'brute',   hp:25, deck:['rock4','rock4','rock5','rock4','rock3','rock5','rock6','rock4','scissors3','paper3','rock4','rock5'],
+   intro:'"ROCK. Always rock." — The Brute\'s entire strategy', taunt:'ROCK WINS EVERYTHING!', loss:'Impossible... ROCK IS UNBEATABLE!'},
+  {name:'The Machine',    behavior:'machine', hp:28, deck:['rock4','paper4','scissors4','rock5','paper5','scissors5','rock4','paper4','scissors4','rock5','paper5','scissors5'],
+   intro:'Calculating optimal move sequence...', taunt:'Probability favours my next play.', loss:'Error. Unexpected result. Recalibrating.'},
+  {name:'The Trickster',  behavior:'random',  hp:30, deck:['scissors4','scissors5','scissors6','rock3','paper3','steal','swift_cut','scissors4','sharp_scissors','scissors5','rock4','mirror_card'],
+   intro:'"You think you know what I\'ll play. You don\'t."', taunt:'Surprise!', loss:'...Okay, that was actually good.'},
+  {name:'The Archmage',   behavior:'smart',   hp:35, deck:['rock5','paper5','scissors5','rock6','paper6','scissors6','arcane_wrap','earthquake','shatter_rock','shear_force','dominance','pat_breaker'],
+   intro:'The Archmage regards you with mild interest.', taunt:'"I already know your next move."', loss:'"...Interesting. You\'re better than I calculated."'},
+];
+
+// ─── BOSS OPPONENTS (appear every 5 rounds) ───
+const BOSS_ROSTER = [
+  {name:'The Colossus',   behavior:'brute',   hp:60, isBoss:true,
+   legendaryCard:'dominance',
+   deck:['rock6','rock6','rock5','rock5','rock6','boulder_crash','boulder_crash','iron_will','iron_will','earthquake','earthquake','rockslide','momentum_break','momentum_break','rock4','rock5'],
+   intro:'"You dare challenge me? Mountains bow before me, child."',
+   taunt:'"Is that ALL you have?!"',
+   loss:'"...You have earned the right to call yourself a warrior."',
+   flavor:'A living avalanche. His plays hit like geological disasters.'},
+  {name:'The Phantom Queen',behavior:'machine',hp:55,isBoss:true,
+   legendaryCard:'abs_mirror',
+   deck:['scissors5','scissors6','mirror_card','mirror_card','echo_play','echo_play','pattern_break','copycat','reversal','fate_twist','swift_cut','swift_cut','scissors4','scissors5','folding_tech','adapt'],
+   intro:'"I am the shadow of every move you\'ve ever made."',
+   taunt:'"I know what you\'ll play before you do."',
+   loss:'"...The mirror cracks. Well played."',
+   flavor:'She copies, adapts, and counters. Fighting her is fighting yourself.'},
+  {name:'The Dealer',     behavior:'random',  hp:50, isBoss:true,
+   legendaryCard:'the_dealer',
+   deck:['the_jester','chaos_hand','gamblers_hand','gamblers_hand','wild_throw','wild_throw','scramble','scramble','double_down','double_down','the_dealer','schrodingers','rock4','paper4','scissors4','rock5'],
+   intro:'"Sit down. Let\'s play a little game. The stakes? Everything."',
+   taunt:'"The house always wins. Remember that."',
+   loss:'"...Ha! First loss in 300 games. Buy me a drink sometime."',
+   flavor:'Pure chaos. Half his deck is random — and somehow that makes him more dangerous.'},
+  {name:'The Oracle',     behavior:'smart',   hp:65, isBoss:true,
+   legendaryCard:'fate_engine',
+   deck:['predict_engine','predict_engine','strat_rewrite','strat_rewrite','abs_mirror','abs_mirror','trap_setup','trap_setup','field_notes','field_notes','symbol_lock','symbol_lock','paper5','paper6','scissors5','rock5'],
+   intro:'"I have seen this battle already. Would you like to know how it ends?"',
+   taunt:'"Scissors. You were going to play scissors."',
+   loss:'"The future... changed. You are not what I foresaw."',
+   flavor:'She has predicted 10,000 matches. She\'s been wrong twice. You might be the third.'},
+];
+
+
+// ─── PERMANENT BONUSES ───
+const BONUS_POOL = [
+  {id:'stone_crown', name:'Stone Crown', icon:'👑', desc:'Rock deals double damage on first win each fight.', effect:'stoneCrown'},
+  {id:'tarot_cards', name:'Tarot Cards', icon:'🔮', desc:'First Predict Engine each fight is free — no risk.', effect:'tarotCards'},
+  {id:'lucky_coin',  name:'Lucky Coin',  icon:'🪙', desc:'10% chance to redraw a losing card.', effect:'luckyCoin'},
+  {id:'blood_pact',  name:'Blood Pact',  icon:'🩸', desc:'Sacrifice 3 HP before each fight to draw 2 extra cards.', effect:'bloodPact'},
+  {id:'mirror_seal', name:'Mirror Seal', icon:'🪞', desc:'Mirror Trap activates passively — no buff slot needed.', effect:'mirrorSeal'},
+  {id:'gold_hands',  name:'Gold Hands',  icon:'💰', desc:'Earn +3 gold per won round.', effect:'goldHands'},
+  {id:'iron_skin',   name:'Iron Skin',   icon:'🛡️', desc:'Reduce all incoming damage by 1.', effect:'ironSkin'},
+  {id:'scholar',     name:'Scholar',     icon:'📚', desc:'Start each fight with +2 cards in hand.', effect:'scholar'},
+];
+
+// ─── SHOP ITEMS ───
+const SHOP_ITEMS = [
+  {id:'pack_basic',   name:'Basic Pack',    icon:'🎴', desc:'Add 4 random common cards to your deck.',          cost:4,  type:'pack',    cards:['rock3','paper4','scissors5','rock4']},
+  {id:'pack_power',   name:'Power Pack',    icon:'⚡', desc:'Add 3 uncommon + 1 rare card to your deck.',        cost:8,  type:'pack',    cards:['rock5','paper5','scissors5','earthquake']},
+  {id:'pack_arcane',  name:'Arcane Pack',   icon:'🔮', desc:'Add 3 special ability cards.',                      cost:10, type:'pack',    cards:['mend','arcane_wrap','mirror_card']},
+  {id:'pack_buff',    name:'Buff Pack',     icon:'✨', desc:'Add 3 buff cards (1 rare) to your deck.',           cost:7,  type:'pack',    cards:['double_down','momentum','predict_engine']},
+  {id:'pack_legend',  name:'Chaos Pack',   icon:'🎲', desc:'Add 2 rare + 1 legendary card. High risk!',         cost:15, type:'pack',    cards:['shatter_rock','twin_blade','the_jester']},
+  {id:'up_hp',        name:'+10 Max HP',    icon:'❤️', desc:'Increase max HP by 10 and heal 5.',                 cost:7,  type:'upgrade', once:true},
+  {id:'up_deck',      name:'Deck Refresh',  icon:'📦', desc:'Add 5 mixed power cards to your deck.',             cost:5,  type:'upgrade', once:false},
+  {id:'twin_blade',   name:'Twin Blade',    icon:'⚔️', desc:'Add the Twin Blade legendary card.',                cost:11, type:'single',  card:'twin_blade'},
+  {id:'dominance',    name:'Dominance',     icon:'👑', desc:'Add the Dominance legendary card.',                 cost:12, type:'single',  card:'dominance'},
+  {id:'abs_paper',    name:'Absolute Paper',icon:'📜', desc:'Add Absolute Paper legendary card.',                cost:14, type:'single',  card:'abs_paper'},
+  {id:'heal_full',    name:'Full Heal',     icon:'💊', desc:'Restore all HP.',                                   cost:9,  type:'upgrade', once:false},
+];
+
+// ═══════════════════════════════════════════════════
+//  PERSISTENT STATE (localStorage)
+// ═══════════════════════════════════════════════════
+function loadPersist(){
+  try{
+    const p=JSON.parse(localStorage.getItem('ssp_persist'))||{};
+    return {unlocked:[], runs:0, wins:0, totalOpponents:0, cardsOwned:0, bossesDefeated:[], ...p};
+  }
+  catch{ return{unlocked:[],runs:0,wins:0,totalOpponents:0,cardsOwned:0,bossesDefeated:[]}; }
+}
+function savePersist(p){ try{ localStorage.setItem('ssp_persist',JSON.stringify(p)); }catch{} }
+
+let PERSIST = loadPersist();
+
+function unlockCard(id){
+  if(!PERSIST.unlocked.includes(id)){ PERSIST.unlocked.push(id); savePersist(PERSIST); }
+}
+function isUnlocked(id){ return PERSIST.unlocked.includes(id)||['common','uncommon'].includes((CARDS[id]||{}).rarity); }
+
+// ═══════════════════════════════════════════════════
+//  GAME STATE
+// ═══════════════════════════════════════════════════
+const G = {
+  round:1, maxRounds:10,
+  playerDeck:[], playerHand:[], playerBuffHand:[],
+  cpuDeck:[], cpuHand:[],
+  playerHP:20, playerMaxHP:20,
+  cpuHP:20, cpuMaxHP:20,
+  playerGold:0,
+  loseStreak:0, cpuLoseStreak:0,
+  canPeekCPU:false,
+  selectedCard:null, selectedBuff:null,
+  selectedDeck:null,
+  difficulty:'easy',
+  buffUsedThisRound:false,
+  luckMeter:0,
+  activeBonuses:[],
+  activeEffects:[],
+  lastPlayerType:null, lastCpuType:null,
+  lastWinSnapshot:null,
+  lastFullRound:null,
+  cpuLastType:null, cpuSecondLastType:null,
+  patternBreakerActive:false,
+  dominanceTurns:0,
+  reinforcedPaperLost:false,
+  totalRounds:0, totalWins:0, totalLosses:0,
+  phase:'idle',
+  startingDeck:[],
+  cpuOpponent:null,
+  prevScreen:null,
+  reversalPending:false,
+  fateTwistPending:false,
+  pendingPCard:null, pendingCCard:null,
+  // boss tracking
+  isBossFight:false,
+  bossesDefeated:0,
+  fateEngineActive:false,
+  rockslideQueued:false,
+  stoneWallBonus:false,
+  symbolLocked:null,
+  disruptionActive:false,
+  dominantCycleSeq:[],   // tracks R→P→S sequence
+  chainWinStreak:0,
+  // hoarder
+  isHoarder:false,
+  hoarderBattleCount:0,
+  hoarderShopSkips:0,
+  hoarderCommonTimer:0,
+  hoarderPicks:[],         // chosen cards
+  hoarderPicksNeeded:3,
+  // trial
+  trialCallback:null,
+  trialState:null,
+  copycatPending:false,
+  phantomSaved:false,
+};
+
+function eff(id){ return G.activeEffects.find(e=>e.id===id); }
+function hasBonus(id){ return G.activeBonuses.includes(id); }
+function addEff(id,dur,meta={}){
+  const e=eff(id); if(e){e.dur=Math.max(e.dur,dur);Object.assign(e,meta);}
+  else G.activeEffects.push({id,dur,...meta});
+}
+function tickEffects(){ G.activeEffects=G.activeEffects.map(e=>({...e,dur:e.dur-1})).filter(e=>e.dur>0); }
+
+// ═══════════════════════════════════════════════════
+//  UTILITIES
+// ═══════════════════════════════════════════════════
+function uid(){ return Math.random().toString(36).slice(2,8); }
+function shuffle(a){ for(let i=a.length-1;i>0;i--){const j=0|Math.random()*(i+1);[a[i],a[j]]=[a[j],a[i]];}return a; }
+function delay(ms){ return new Promise(r=>setTimeout(r,ms)); }
+function rand(arr){ return arr[0|Math.random()*arr.length]; }
+function clamp(v,lo,hi){ return Math.max(lo,Math.min(hi,v)); }
+
+function makeCard(id){
+  const d=CARDS[id]; if(!d) return null;
+  return{id,uid:uid(),...d};
+}
+
+function showScreen(name){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  document.getElementById(name+'-screen').classList.add('active');
+}
+function setLog(m){ document.getElementById('battle-log').textContent=m; }
+
+// ═══════════════════════════════════════════════════
+//  START SCREEN
+// ═══════════════════════════════════════════════════
+function initStart(){
+  renderDeckGrid();
+  renderCollectionInline();
+}
+
+function renderDeckGrid(){
+  const grid=document.getElementById('deck-grid'); grid.innerHTML='';
+  Object.entries(DECK_DEFS).forEach(([id,d])=>{
+    const locked=d.locked&&!isUnlocked('deck_'+id);
+    const div=document.createElement('div');
+    div.className='deck-card'+(locked?' locked':'');
+    div.dataset.d=id;
+    // Build progress text for special unlock conditions
+    let lockMsg = d.lockDesc||'Complete a run to unlock.';
+    if(id==='grandmaster') lockMsg=`Defeat 100 opponents (${PERSIST.totalOpponents||0}/100)`;
+    if(id==='collector') lockMsg=`Own 50 cards (${PERSIST.cardsOwned||0}/50)`;
+    if(id==='hoarder') lockMsg=`Beat 10 opponents in a run without buying (${PERSIST.totalOpponents||0} total played)`;
+    div.innerHTML=`<div class="deck-icon">${d.icon}</div>
+      <div class="deck-name">${d.name}</div>
+      <div class="deck-perk">${d.perk}</div>
+      <div class="deck-desc">${buildDeckDesc(id)}</div>
+      ${locked?`<div class="lock-tag">🔒 ${lockMsg}</div>`:''}`;
+    if(!locked) div.onclick=()=>selectDeck(id);
+    grid.appendChild(div);
+  });
+}
+
+function buildDeckDesc(id){
+  const d=DECK_DEFS[id];
+  const counts={rock:0,paper:0,scissors:0,special:0,buff:0};
+  d.cards.forEach(cid=>{const c=CARDS[cid];if(c){counts[c.type]=(counts[c.type]||0)+1;}});
+  const parts=[];
+  if(counts.rock) parts.push(`${counts.rock} Rock`);
+  if(counts.paper) parts.push(`${counts.paper} Paper`);
+  if(counts.scissors) parts.push(`${counts.scissors} Scissors`);
+  if(counts.special) parts.push(`${counts.special} Special`);
+  if(counts.buff) parts.push(`${counts.buff} Buff`);
+  return parts.join(' · ');
+}
+
+function selectDeck(id){
+  if(DECK_DEFS[id].locked&&!isUnlocked('deck_'+id)) return;
+  G.selectedDeck=id;
+  document.querySelectorAll('.deck-card').forEach(e=>e.classList.remove('sel'));
+  const el=document.querySelector(`[data-d="${id}"]`); if(el) el.classList.add('sel');
+  const btn=document.getElementById('start-btn'); btn.disabled=false; btn.textContent='Begin Run';
+}
+
+function switchTab(t){
+  document.querySelectorAll('.tab').forEach((e,i)=>e.classList.toggle('active',['decks','collection'][i]===t));
+  document.querySelectorAll('.tab-content').forEach(e=>e.classList.remove('active'));
+  document.getElementById('tab-'+t).classList.add('active');
+  if(t==='collection') renderCollectionInline();
+}
+
+// ═══════════════════════════════════════════════════
+//  GAME START
+// ═══════════════════════════════════════════════════
+function selectDiff(d){
+  G.difficulty=d;
+  document.querySelectorAll('.diff-btn').forEach(b=>b.classList.toggle('active',b.dataset.diff===d));
+}
+
+function startGame(){
+  PERSIST.runs++; savePersist(PERSIST);
+  // Full reset every run
+  G.round=1; G.maxRounds=10;
+  G.playerHP=20; G.playerMaxHP=20;
+  G.playerGold=12; G.luckMeter=0;
+  G.activeBonuses=[]; G.activeEffects=[];
+  G.totalRounds=0; G.totalWins=0; G.totalLosses=0;
+  G.loseStreak=0; G.cpuLoseStreak=0;
+  G.lastWinSnapshot=null; G.lastFullRound=null;
+  G.lastPlayerType=null; G.lastCpuType=null;
+  G.cpuLastType=null; G.cpuSecondLastType=null;
+  G.reversalPending=false; G.fateTwistPending=false;
+  G.copycatPending=false; G.patternBreakerActive=false;
+  G.dominanceTurns=0; G.phantomSaved=false;
+  G.reinforcedPaperLost=false; G.isBossFight=false;
+  G.fateEngineActive=false; G.rockslideQueued=false;
+  G.stoneWallBonus=false; G.symbolLocked=null;
+  G.disruptionActive=false; G.dominantCycleSeq=[];
+  G.chainWinStreak=0;
+  G.isHoarder=(G.selectedDeck==='hoarder');
+  G.hoarderBattleCount=0; G.hoarderShopSkips=0; G.hoarderCommonTimer=0;
+  G.hoarderPicks=[];
+  G.playerDeck=[]; G.playerHand=[]; G.playerBuffHand=[];
+  G.cpuDeck=[]; G.cpuHand=[];
+  G.startingDeck=[...DECK_DEFS[G.selectedDeck].cards];
+  G.playerDeck=shuffle(G.startingDeck.map(makeCard));
+  beginFight();
+}
+
+function beginFight(){
+  // Boss every 5 rounds
+  G.isBossFight = (G.round % 5 === 0);
+  let opp;
+  if(G.isBossFight){
+    const bossIdx = Math.floor((G.round/5)-1) % BOSS_ROSTER.length;
+    opp = BOSS_ROSTER[bossIdx];
+  } else {
+    opp = CPU_ROSTER[Math.min((G.round-1) % CPU_ROSTER.length, CPU_ROSTER.length-1)];
+  }
+  G.cpuOpponent=opp;
+
+  // ── Build CPU deck filtered by difficulty ──
+  const diff=G.difficulty||'easy';
+  const allowedRarities={
+    easy:    new Set(['common']),
+    medium:  new Set(['common','uncommon','rare']),
+    hard:    new Set(['common','uncommon','rare','legendary']),
+  }[diff];
+
+  const baseDeck=[...opp.deck,...opp.deck];
+  const fallbackByType={rock:'rock3',paper:'paper3',scissors:'scissors3',special:'rock3',buff:'rock3'};
+  const filteredDeck=baseDeck.map(id=>{
+    const card=CARDS[id];
+    if(!card) return 'rock3';
+    // Bosses always use their full deck regardless of difficulty
+    if(G.isBossFight) return id;
+    if(allowedRarities.has(card.rarity)) return id;
+    const baseType=['rock','paper','scissors'].includes(card.type)?card.type:'rock';
+    return fallbackByType[baseType]||'rock3';
+  });
+
+  if(diff==='hard'&&!G.isBossFight){
+    const bonusPool=['earthquake','arcane_wrap','twin_blade','rock_lord','the_jester','chaos_hand','dominance','pat_breaker','momentum_break','triple_mind'];
+    const extras=shuffle(bonusPool).slice(0,3);
+    filteredDeck.push(...extras);
+  }
+
+  G.cpuDeck=shuffle(filteredDeck.map(makeCard).filter(Boolean));
+
+  // HP scaling — bosses are much harder
+  const hpMult={easy:0.75, medium:1, hard:1.3}[diff]||1;
+  const bossHpMult = G.isBossFight ? 1.5 : 1;
+  G.cpuHP=Math.round((opp.hp+(G.round*2))*hpMult*bossHpMult);
+  G.cpuMaxHP=G.cpuHP;
+
+  // Restore player deck — add starting deck cards back
+  const allCards=[...G.playerDeck,...G.playerHand,...G.playerBuffHand];
+  const extra=G.startingDeck.map(makeCard);
+  G.playerDeck=shuffle([...allCards,...extra]);
+  G.playerHand=[]; G.playerBuffHand=[];
+  G.loseStreak=0; G.cpuLoseStreak=0;
+  G.canPeekCPU=false;
+  G.buffUsedThisRound=false;
+  G.patternBreakerActive=false; G.dominanceTurns=0;
+  G.phantomSaved=false;
+  G.reinforcedPaperLost=false;
+  G.lastPlayerType=null; G.lastCpuType=null; G.cpuLastType=null; G.cpuSecondLastType=null;
+  G.selectedCard=null; G.selectedBuff=null;
+  G.rockslideQueued=false; G.stoneWallBonus=false;
+  G.symbolLocked=null; G.disruptionActive=false;
+  G.phase='idle';
+
+  if(hasBonus('bloodPact')){ G.playerHP=Math.max(1,G.playerHP-3); }
+
+  showScreen('battle');
+  updateHeader();
+  updateCPULabel();
+
+  // Boss gets an intro dialogue
+  if(G.isBossFight && opp.intro){
+    setLog(`⚔️ BOSS: ${opp.intro}`);
+  }
+
+  // Draw 5 cards (not 7) — corrected hand size
+  const handSize = hasBonus('scholar') ? 7 : 5;
+  drawCards(handSize);
+  cpuDraw(5);
+  renderHands();
+  updateActiveEffectsDisplay();
+  updateButtons();
+}
+
+// ═══════════════════════════════════════════════════
+//  DRAWING
+// ═══════════════════════════════════════════════════
+function drawCards(n){
+  const amt=n||1;
+  let drawn=0;
+  while(drawn<amt){
+    if(G.playerDeck.length===0){ checkGameOver('deck'); return; }
+    // skip draw if both hand and buff hand are at capacity
+    if(G.playerHand.length>=7 && G.playerBuffHand.length>=6) break;
+    const card=G.playerDeck.shift();
+    if(card.isbuff||card.type==='buff'){
+      if(G.playerBuffHand.length<6) G.playerBuffHand.push(card);
+      else G.playerDeck.push(card);
+    } else {
+      if(G.playerHand.length<7) G.playerHand.push(card);
+      else G.playerDeck.push(card);
+    }
+    drawn++;
+  }
+  updateButtons();
+}
+
+function manualDraw(){
+  if(G.phase!=='idle') return;
+  if(G.playerHand.length>=7 && G.playerBuffHand.length>=6){ setLog('Hand is full — play a card first.'); return; }
+  if(G.playerDeck.length===0){ setLog('No cards left in your deck!'); return; }
+  drawCards(1);
+  renderHands();
+  updateHeader();
+}
+
+function cpuDraw(n){
+  for(let i=0;i<n;i++){
+    if(G.cpuDeck.length===0) break;
+    if(G.cpuHand.length>=5) break;
+    G.cpuHand.push(G.cpuDeck.shift());
+  }
+}
+
+// ═══════════════════════════════════════════════════
+//  RENDER
+// ═══════════════════════════════════════════════════
+function renderHands(){
+  renderPlayerHand(); renderCPUHand(); renderBuffHand();
+  updateHeader();
+  updateActiveEffectsDisplay();
+}
+
+function renderPlayerHand(){
+  const el=document.getElementById('p-hand'); el.innerHTML='';
+  G.playerHand.forEach((card,i)=>{
+    const div=buildCardEl(card,true);
+    if(card.uid===G.selectedCard) div.classList.add('sel');
+    div.onclick=()=>selectCard(i);
+    el.appendChild(div);
+  });
+}
+
+function renderBuffHand(){
+  const el=document.getElementById('buff-hand'); el.innerHTML='';
+  G.playerBuffHand.forEach((card,i)=>{
+    const div=buildBuffEl(card);
+    if(card.uid===G.selectedBuff) div.classList.add('sel');
+    if(G.buffUsedThisRound) div.classList.add('used');
+    div.onclick=()=>!G.buffUsedThisRound&&selectBuff(card.uid);
+    el.appendChild(div);
+  });
+  // show use-buff btn only if buff selected
+  const btn=document.getElementById('use-buff-btn');
+  btn.style.display=G.selectedBuff?'inline-flex':'none';
+  btn.disabled=G.buffUsedThisRound||!G.selectedBuff||G.phase!=='idle';
+}
+
+function renderCPUHand(){
+  const el=document.getElementById('cpu-hand'); el.innerHTML='';
+  G.cpuHand.forEach((card,i)=>{
+    if(G.canPeekCPU){
+      const div=buildCardEl(card,false); div.classList.add('cpu-card','no-hover');
+      if(i===0){ const h=document.createElement('div'); h.className='preview-hint'; h.textContent='👁 Next'; div.appendChild(h); }
+      el.appendChild(div);
+    } else {
+      const b=document.createElement('div'); b.className='card-back'; b.textContent='🂠'; el.appendChild(b);
+    }
+  });
+}
+
+function buildCardEl(card){
+  const div=document.createElement('div');
+  div.className=`card ct-${card.type} rar-${card.rarity}`;
+  const rarDot=`<div class="card-rarity-dot rd-${card.rarity}"></div>`;
+  div.innerHTML=`
+    <div class="card-top"><div class="card-pw">${card.power||''}</div>${rarDot}</div>
+    <div class="card-icon">${card.icon}</div>
+    <div class="card-bot">
+      <div class="card-name">${card.name}</div>
+      ${card.ability?`<div class="card-abil">${card.ability}</div>`:''}
+    </div>`;
+  if(card.rarity==='legendary'){
+    const s=document.createElement('div'); s.className='shimmer-overlay'; div.appendChild(s);
+  }
+  return div;
+}
+
+function buildBuffEl(card){
+  const div=document.createElement('div');
+  div.className=`buff-card rar-${card.rarity}`;
+  div.innerHTML=`<div class="bi">${card.icon}</div><div class="bn">${card.name}</div><div class="br">${card.rarity}</div>`;
+  div.title=card.ability||'';
+  return div;
+}
+
+function updateActiveEffectsDisplay(){
+  const el=document.getElementById('effects-row'); el.innerHTML='';
+  G.activeEffects.forEach(e=>{
+    const t=document.createElement('div'); t.className='eff-tag';
+    t.textContent=`${e.id} (${e.dur})`;
+    el.appendChild(t);
+  });
+  if(G.dominanceTurns>0){const t=document.createElement('div');t.className='eff-tag';t.textContent=`Dominance (${G.dominanceTurns})`;el.appendChild(t);}
+  if(G.patternBreakerActive){const t=document.createElement('div');t.className='eff-tag';t.textContent='Pattern Breaker';el.appendChild(t);}
+}
+
+function updateHeader(){
+  const ph=Math.max(0,G.playerHP), ch=Math.max(0,G.cpuHP);
+  document.getElementById('p-hp-txt').textContent=`${ph}/${G.playerMaxHP}`;
+  document.getElementById('c-hp-txt').textContent=`${ch}/${G.cpuMaxHP}`;
+  document.getElementById('p-hp-bar').style.width=`${ph/G.playerMaxHP*100}%`;
+  document.getElementById('c-hp-bar').style.width=`${ch/G.cpuMaxHP*100}%`;
+  document.getElementById('r-badge').textContent=`Round ${G.round}/${G.maxRounds}`;
+  document.getElementById('p-gold').textContent=G.playerGold;
+  document.getElementById('shop-gold').textContent=G.playerGold;
+  document.getElementById('p-deck-cnt').textContent=G.playerDeck.length;
+  document.getElementById('c-deck-cnt').textContent=G.cpuDeck.length;
+  document.getElementById('p-hand-cnt').textContent=G.playerHand.length;
+  document.getElementById('luck-fill').style.width=`${G.luckMeter}%`;
+  document.getElementById('luck-txt').textContent=`${G.luckMeter}%`;
+  document.getElementById('shop-luck').textContent=G.luckMeter;
+
+  const ab=document.getElementById('active-bonuses'); ab.innerHTML='';
+  G.activeBonuses.forEach(b=>{
+    const bd=BONUS_POOL.find(x=>x.effect===b);
+    if(bd){const t=document.createElement('div');t.className='ab-tag';t.textContent=`✦ ${bd.name}`;ab.appendChild(t);}
+  });
+}
+
+function updateCPULabel(){
+  const opp=G.cpuOpponent;
+  if(!opp) return;
+  const bossTag = G.isBossFight ? ' ⚔️ BOSS' : '';
+  document.getElementById('cpu-name-label').textContent=opp.name+bossTag;
+  document.getElementById('cpu-name-zone').textContent=opp.name+bossTag;
+  const behaviorLabel = G.isBossFight
+    ? (opp.flavor||'A fearsome boss.')
+    : ({random:'— Unpredictable',brute:'— Loves Rock',machine:'— Never Repeats',smart:'— Adapts'}[opp.behavior]||'');
+  document.getElementById('cpu-behavior-tag').textContent=behaviorLabel;
+  // Boss styling on name label
+  const nameLabel=document.getElementById('cpu-name-label');
+  if(nameLabel) nameLabel.style.color=G.isBossFight?'var(--rock-l)':'';
+  // difficulty badge
+  const badge=document.getElementById('diff-badge');
+  const d=G.difficulty||'easy';
+  const dCfg={
+    easy:  {label:'🌿 Easy',  bg:'rgba(39,174,96,.18)',  color:'var(--scissors-l)'},
+    medium:{label:'⚔️ Medium', bg:'rgba(243,156,18,.18)', color:'var(--gold)'},
+    hard:  {label:'💀 Hard',  bg:'rgba(192,57,43,.25)',  color:'var(--rock-l)'},
+  }[d]||{};
+  if(badge){ badge.textContent=dCfg.label||''; badge.style.background=dCfg.bg||''; badge.style.color=dCfg.color||''; }
+}
+
+function updateButtons(){
+  document.getElementById('play-btn').disabled=!G.selectedCard||G.phase!=='idle';
+  document.getElementById('draw-btn').disabled=G.phase!=='idle'||G.playerDeck.length===0||G.playerHand.length>=7;
+  const ubb=document.getElementById('use-buff-btn');
+  ubb.style.display=G.selectedBuff?'inline-flex':'none';
+  ubb.disabled=G.buffUsedThisRound||!G.selectedBuff||G.phase!=='idle';
+}
+
+// ═══════════════════════════════════════════════════
+//  SELECTION
+// ═══════════════════════════════════════════════════
+function selectCard(i){
+  if(G.phase!=='idle') return;
+  const c=G.playerHand[i];
+  G.selectedCard=(G.selectedCard===c.uid)?null:c.uid;
+  G.selectedBuff=null;
+  renderPlayerHand(); renderBuffHand(); updateButtons();
+}
+
+function selectBuff(uid){
+  if(G.phase!=='idle'||G.buffUsedThisRound) return;
+  G.selectedBuff=(G.selectedBuff===uid)?null:uid;
+  G.selectedCard=null;
+  renderPlayerHand(); renderBuffHand(); updateButtons();
+}
+
+// ═══════════════════════════════════════════════════
+//  CPU PLAY LOGIC
+// ═══════════════════════════════════════════════════
+function cpuPickCard(){
+  if(G.cpuHand.length===0) return null;
+  const opp=G.cpuOpponent||{behavior:'random'};
+  let idx=0;
+  let hand=[...G.cpuHand];
+
+  // Filter out locked symbol
+  if(G.symbolLocked){
+    const unlocked=hand.filter(c=>c.type!==G.symbolLocked);
+    if(unlocked.length>0) hand=unlocked;
+    G.symbolLocked=null;
+  }
+  // Disruption: can't repeat last type
+  if(G.disruptionActive&&G.cpuLastType){
+    const nonRepeat=hand.filter(c=>c.type!==G.cpuLastType);
+    if(nonRepeat.length>0) hand=nonRepeat;
+    G.disruptionActive=false;
+  }
+
+  if(opp.behavior==='brute'){
+    const ri=hand.findIndex(c=>c.type==='rock');
+    idx=ri>=0?ri:0;
+  } else if(opp.behavior==='machine'){
+    const nonRepeat=hand.findIndex(c=>c.type!==G.cpuLastType);
+    idx=nonRepeat>=0?nonRepeat:0;
+  } else if(opp.behavior==='smart'){
+    if(G.lastPlayerType){
+      const counter={rock:'paper',paper:'scissors',scissors:'rock'}[G.lastPlayerType];
+      const ci=hand.findIndex(c=>c.type===counter||c.type==='special');
+      idx=ci>=0?ci:0;
+    } else idx=Math.floor(Math.random()*hand.length);
+  } else {
+    idx=Math.floor(Math.random()*hand.length);
+  }
+
+  const chosen=hand[idx];
+  // Remove from actual hand
+  const realIdx=G.cpuHand.findIndex(c=>c.uid===chosen.uid);
+  return G.cpuHand.splice(realIdx>=0?realIdx:0,1)[0];
+}
+
+// ═══════════════════════════════════════════════════
+//  PLAY CARD
+// ═══════════════════════════════════════════════════
+// Effects that don't compete against a CPU card — shown solo
+const SOLO_EFFECTS = new Set([
+  'healS','healL','drawExtra','steal',
+  'inkFlood','temporal','timeLoop','jester',
+  'patternBreak','trialCard',
+  // new solo cards
+  'scramble','carefulPlanning','fieldNotes','focusCard',
+  'tripleMind','adaptation',
+]);
+const NEEDS_CPU = new Set([
+  'ironWill','earthquake','arcaneWrap','twinBlade','rockLord','mirror',
+  'tripleStrike','chaosHand','absPaper','reversal','copycat',
+  'gamblersHand','fateTwist','masterThree','paradox','patBreaker','dominance',
+  // new vs cards
+  'pebbleToss','cleanCut','hesitation','stoneWall',
+  'switchblade','rockslide','wildThrow',
+  'swapTrick','momentumBreak','perfectCut','boulderCrash','secretTech','stratRewrite','dominantCycle',
+  'schrodingers','timeThief','absMirror','theDealer','fateEngine',
+]);
+
+function isSoloEffect(card){
+  if(!card.effect) return false;
+  if(NEEDS_CPU.has(card.effect)) return false;
+  return SOLO_EFFECTS.has(card.effect);
+}
+
+async function playSelected(){
+  if(!G.selectedCard||G.phase!=='idle') return;
+  G.phase='resolving';
+  updateButtons();
+
+  const pi=G.playerHand.findIndex(c=>c.uid===G.selectedCard);
+  const pCard=G.playerHand.splice(pi,1)[0];
+  G.selectedCard=null;
+
+  if(isSoloEffect(pCard)){
+    await playSoloCard(pCard);
+    return;
+  }
+
+  // Normal VS flow — draw CPU card
+  const cCard=cpuPickCard();
+  if(!cCard){ await winFight(); return; }
+
+  showVsField(pCard, cCard);
+  renderPlayerHand(); renderCPUHand();
+  await delay(350);
+  await resolveCards(pCard,cCard);
+}
+
+function showVsField(pCard, cCard){
+  // Make sure solo field is hidden, VS field shown
+  document.getElementById('solo-field').style.display='none';
+  document.getElementById('battle-field').style.display='flex';
+  showSlotCards(pCard, cCard);
+}
+
+async function playSoloCard(pCard){
+  // Hide VS field, show solo field
+  document.getElementById('battle-field').style.display='none';
+  const sf=document.getElementById('solo-field');
+  sf.style.display='flex';
+
+  // Render the card in the solo zone
+  const wrap=document.getElementById('solo-card-wrap');
+  wrap.innerHTML='';
+  const cardEl=buildCardEl(pCard);
+  cardEl.classList.add('solo-card-anim','no-hover');
+  cardEl.style.cursor='default';
+  wrap.appendChild(cardEl);
+  document.getElementById('solo-effect-label').textContent='';
+
+  renderPlayerHand(); renderCPUHand();
+  await delay(300);
+
+  // Execute the effect
+  let msg='';
+  let outcome='draw';
+  let dmgCpu=0;
+
+  switch(pCard.effect){
+    case 'healS':
+      G.playerHP=Math.min(G.playerMaxHP,G.playerHP+3);
+      msg='Fortify: Restored 3 HP'; outcome='draw'; break;
+    case 'healL':
+      G.playerHP=Math.min(G.playerMaxHP,G.playerHP+5);
+      msg='Mend: Restored 5 HP'; outcome='draw'; break;
+    case 'drawExtra':
+      drawCards(2); renderHands();
+      msg='Swift Cut: Drew 2 extra cards'; outcome='draw'; break;
+    case 'steal':
+      G.playerGold+=2;
+      msg='Steal: Took 2 gold'; outcome='draw'; break;
+    case 'inkFlood':{
+      const fd=5; G.cpuHP=Math.max(0,G.cpuHP-fd);
+      showDmgFloat(`-${fd}`,true);
+      msg=`Ink Flood: ${fd} flat damage dealt`; outcome='win'; break;
+    }
+    case 'temporal':{
+      if(G.lastWinSnapshot){
+        const d=G.lastWinSnapshot.dmg; G.cpuHP=Math.max(0,G.cpuHP-d);
+        showDmgFloat(`-${d}`,true);
+        msg=`Temporal Loop: Replayed last win — -${d} CPU HP`; outcome='win';
+      } else { msg='Temporal Loop: No winning round to replay yet'; outcome='draw'; }
+      break;
+    }
+    case 'timeLoop':{
+      if(G.lastFullRound){
+        const snap=G.lastFullRound;
+        if(snap.outcome==='win'){ G.cpuHP=Math.max(0,G.cpuHP-snap.dmg); showDmgFloat(`-${snap.dmg}`,true); }
+        else if(snap.outcome==='lose'){ G.playerHP=Math.max(0,G.playerHP-snap.dmg); showDmgFloat(`-${snap.dmg}`,false); }
+        msg=`Time Loop: Replayed last round (${snap.outcome}, ${snap.dmg||0} dmg)`; outcome=snap.outcome;
+      } else { msg='Time Loop: No previous round to replay'; outcome='draw'; }
+      break;
+    }
+    case 'jester':{
+      sf.style.display='none';
+      document.getElementById('battle-field').style.display='flex';
+      G.phase='jester';
+      await showCoinFlip();
+      return;
+    }
+    case 'patternBreak':{
+      if(G.cpuLastType&&G.cpuLastType===G.cpuSecondLastType){
+        const pd=8; G.cpuHP=Math.max(0,G.cpuHP-pd);
+        showDmgFloat(`-${pd}`,true);
+        msg=`Pattern Break! CPU repeated ${G.cpuLastType} — ${pd} damage dealt`; outcome='win';
+      } else {
+        msg=`Pattern Break: CPU hasn't repeated yet (last: ${G.cpuLastType||'none'})`; outcome='draw';
+      }
+      break;
+    }
+    case 'scramble':
+      shuffle(G.playerDeck);
+      drawCards(1); renderHands();
+      msg='Scramble: Deck shuffled — drew 1 card!'; outcome='draw'; break;
+    case 'carefulPlanning':{
+      const top3=G.playerDeck.slice(0,3);
+      if(top3.length===0){ msg='Careful Planning: Deck is empty!'; outcome='draw'; break; }
+      // Simple reorder: put highest-power card first
+      top3.sort((a,b)=>(b.power||0)-(a.power||0));
+      G.playerDeck.splice(0,top3.length,...top3);
+      msg=`Careful Planning: Top 3 reordered — next up: ${top3.map(c=>c.name).join(', ')}`; outcome='draw'; break;
+    }
+    case 'fieldNotes':{
+      const last1=G.cpuLastType||'?'; const last2=G.cpuSecondLastType||'?';
+      msg=`Field Notes: CPU's last two symbols — ${last2}, then ${last1}.`; outcome='draw'; break;
+    }
+    case 'focusCard':{
+      if(G.playerHand.length===0){ msg='Focus: No cards to discard!'; outcome='draw'; break; }
+      // Discard first card in hand
+      const discarded=G.playerHand.splice(0,1)[0];
+      const peek=G.cpuHand[0]||G.cpuDeck[0];
+      if(peek){
+        msg=`Focus: Discarded ${discarded.name} — CPU's next card: ${peek.icon} ${peek.name} (${peek.type})!`;
+        G.canPeekCPU=true;
+        document.getElementById('peek-badge').style.display='inline';
+      } else { msg=`Focus: Discarded ${discarded.name} — CPU deck empty!`; }
+      renderHands(); outcome='draw'; break;
+    }
+    case 'tripleMind':{
+      sf.style.display='none';
+      document.getElementById('battle-field').style.display='flex';
+      G.phase='idle';
+      await showTripleMindGame();
+      return;
+    }
+    case 'adaptation':{
+      if(G.totalLosses>0&&G.playerHand.length>0){
+        const idx=Math.floor(Math.random()*G.playerHand.length);
+        G.playerHand[idx].power=(G.playerHand[idx].power||0)+1;
+        msg=`Adaptation: ${G.playerHand[idx].name} gained +1 power!`;
+        renderHands();
+      } else { msg='Adaptation: No losses yet or empty hand.'; }
+      outcome='draw'; break;
+    }
+    case 'trialCard':{
+      sf.style.display='none';
+      document.getElementById('battle-field').style.display='flex';
+      G.phase='idle';
+      await startTrial(null);
+      return;
+    }
+    default:
+      msg=`${pCard.name} activated`; outcome='draw'; break;
+  }
+
+  document.getElementById('solo-effect-label').textContent=msg;
+  setLog(msg);
+
+  // Show result banner over solo field
+  const banner=document.createElement('div');
+  banner.className=`result-banner ${outcome}`;
+  banner.textContent=outcome==='win'?'Effect: Win!':(outcome==='lose'?'Effect: Loss!':'Effect!');
+  sf.style.position='relative';
+  sf.appendChild(banner);
+  await delay(1100);
+  banner.remove();
+
+  // Track streaks for win/loss
+  if(outcome==='win'){ G.loseStreak=0; G.cpuLoseStreak++; G.totalWins++; }
+  else if(outcome==='lose'){ G.loseStreak++; G.cpuLoseStreak=0; G.totalLosses++; }
+
+  checkStreaks();
+  G.luckMeter=clamp(G.luckMeter+2,0,100);
+  G.totalRounds++;
+  tickEffects(); updateHeader(); checkGameOver('hp');
+
+  // Restore VS field for next turn
+  sf.style.display='none';
+  document.getElementById('battle-field').style.display='flex';
+
+  if(G.phase!=='gameover') await nextTurn();
+}
+
+async function resolveCards(pCard,cCard){
+  let pType=pCard.type, cType=cCard.type;
+  let pPow=pCard.power, cPow=cCard.power;
+  let specialMsg='';
+  let autoWin=false, autoLose=false;
+
+  // ── BUFF EFFECTS that modify before resolution ──
+  const activeBuff=G.activeEffects.find(e=>e.id==='buffActive');
+  if(activeBuff){
+    const buffId=activeBuff.buffEffect;
+
+    if(buffId==='reinforcedPaper'){
+      if(G.reinforcedPaperLost&&pType==='paper'&&cType==='rock'){
+        cType='scissors'; specialMsg='Reinforced Paper: Rock can\'t beat paper twice in a row!';
+      }
+    }
+    if(buffId==='doubleDown'){
+      addEff('doubleDown',1);
+    }
+    if(buffId==='momentum'&&eff('momentumReady')){
+      // momentum doubles power on the turn AFTER the win
+      pPow*=2; specialMsg='Momentum: Power doubled from last win!';
+    }
+    if(buffId==='mirrorTrap'||hasBonus('mirrorSeal')){
+      if(G.cpuLastType&&cCard.type===G.cpuLastType){
+        autoWin=true; specialMsg='Mirror Trap: CPU repeated their symbol — auto win!';
+      }
+    }
+    if(buffId==='echoPlay'){
+      if(G.lastPlayerType){
+        pType=G.lastPlayerType; specialMsg=`Echo Play: Replaying ${G.lastPlayerType}!`;
+      } else {
+        specialMsg='Echo Play: No previous symbol to echo.';
+      }
+    }
+    // ── New buff card types (converted from play cards) ──
+    if(buffId==='shatterRock'){
+      if(pType==='rock'&&cType==='paper'){
+        autoWin=true; pPow=6; specialMsg='Shatter Rock: Rock shatters through Paper!';
+      } else { specialMsg='Shatter Rock: No rock vs paper matchup this turn.'; }
+    }
+    if(buffId==='shearForce'){
+      if(pType==='scissors'){
+        autoWin=true; pPow=Math.max(pPow,5); specialMsg='Shear Force: Scissors tears through everything!';
+      } else { specialMsg='Shear Force: Only works with Scissors cards.'; }
+    }
+    if(buffId==='foldingTech'){
+      if(pType==='paper'&&cType==='scissors'){
+        autoWin=true; pPow=Math.max(pPow,5); specialMsg='Folding Tech: Paper folds Scissors flat!';
+      } else { specialMsg='Folding Tech: No paper vs scissors matchup this turn.'; }
+    }
+    if(buffId==='paperShield'){
+      if(pType==='paper'){ addEff('paperShieldActive',1); }
+    }
+    if(buffId==='practiceCut'){
+      // scissors wins ties handled in rpsResolve override
+      addEff('practiceCutActive',1);
+    }
+    if(buffId==='trapSetup'){
+      if(G.cpuLastType&&cCard.type===G.cpuLastType){
+        autoWin=true; pPow=Math.max(pPow,5); specialMsg='Trap Setup: CPU played same symbol again — you win!';
+      } else { specialMsg='Trap Setup: No repeat detected.'; }
+    }
+    if(buffId==='disruption'){
+      // handled in cpuPickCard via G.disruptionActive
+      G.disruptionActive=true;
+    }
+    if(buffId==='symbolLock'){
+      const types=['rock','paper','scissors'];
+      G.symbolLocked=rand(types.filter(t=>t!==G.cpuLastType));
+      specialMsg=`Symbol Lock: CPU cannot play ${G.symbolLocked} next turn!`;
+    }
+    if(buffId==='forcedChoice'){
+      // Force CPU to random — override cCard type for resolution
+      cType=rand(['rock','paper','scissors']);
+      specialMsg=`Forced Choice: CPU forced to play ${cType}!`;
+    }
+    if(buffId==='echoChamber'){
+      // Repeat last used buff effect
+      const lastBuff=G.activeEffects.find(e=>e.id==='lastBuffEffect');
+      if(lastBuff){ addEff('buffActive',1,{buffEffect:lastBuff.effect}); specialMsg=`Echo Chamber: Replaying ${lastBuff.effect}!`; }
+      else { specialMsg='Echo Chamber: No previous buff to echo.'; }
+    }
+  }
+
+  // ── Counter Study: apply before RPS resolve (works on ALL cards) ──
+  const mnc=eff('mirrorNextCard');
+  if(mnc){ pType=mnc.cpuType; specialMsg=(specialMsg?specialMsg+' ':'')+'Counter Study: mirroring CPU!'; }
+
+  // ── Pattern Breaker passive ──
+  if(G.patternBreakerActive&&G.cpuLastType&&cCard.type===G.cpuLastType){
+    autoWin=true; specialMsg='Pattern Breaker: CPU repeated pattern — auto win!';
+  }
+
+  // ── Predict Engine auto-win ──
+  if(eff('predictCorrect')){ autoWin=true; specialMsg='Predict Engine: Predicted correctly — auto win!'; }
+
+  // ── Minimalist passive: ties = wins when ≤6 deck cards ──
+  const totalCards=G.playerDeck.length+G.playerHand.length+G.playerBuffHand.length;
+  if(G.selectedDeck==='minimalist'&&totalCards<=6){ G.dominanceTurns=Math.max(G.dominanceTurns,1); }
+
+  // ── Fate Engine random symbol ──
+  if(eff('fateRandom')){ pType=rand(['rock','paper','scissors']); specialMsg+=' ⚙️ Fate Engine: Symbol randomised!'; }
+
+  // ── SPECIAL CARD EFFECTS ──
+  if(pCard.effect&&!autoWin&&!autoLose){
+    const result=handleSpecialEffect(pCard,cCard,pType,cType,pPow,cPow);
+    pType=result.pType; cType=result.cType;
+    pPow=result.pPow; cPow=result.cPow;
+    if(result.autoWin) autoWin=true;
+    if(result.autoLose) autoLose=true;
+    if(result.msg) specialMsg=result.msg;
+    if(result.earlyReturn){
+      await doEarlyReturn(result, pCard, cCard, specialMsg);
+      return;
+    }
+  }
+
+  // ── RESOLVE OUTCOME ──
+  let outcome='draw';
+  if(autoWin) outcome='win';
+  else if(autoLose) outcome='lose';
+  else {
+    outcome=rpsResolve(pType,cType,pPow,cPow);
+  }
+
+  // ── REVERSAL: flip lose to win ──
+  if(outcome==='lose'&&G.reversalPending){
+    outcome='win'; G.reversalPending=false;
+    specialMsg=(specialMsg?specialMsg+' — ':'')+' Reversal activated! Defeat turned to victory!';
+  }
+  G.reversalPending=false;
+
+  // ── FATE TWIST: reroll on lose ──
+  if(outcome==='lose'&&G.fateTwistPending){
+    G.fateTwistPending=false;
+    const types=['rock','paper','scissors'];
+    const newPType=rand(types);
+    outcome=rpsResolve(newPType,cType,pPow,cPow);
+    specialMsg=(specialMsg?specialMsg+' ':'')+ `Fate Twist rerolled: ${newPType} vs ${cType} → ${outcome}!`;
+  }
+  G.fateTwistPending=false;
+
+  // ── STONE CROWN: double damage on first win ──
+  if(outcome==='win'&&hasBonus('stoneCrown')&&pCard.type==='rock'&&!G.activeEffects.find(e=>e.id==='crownUsed')){
+    pPow*=2; addEff('crownUsed',99); specialMsg+='\n Stone Crown: Rock damage doubled!';
+  }
+
+  // ── IRON SKIN: reduce dmg ──
+  const dmgReduce=hasBonus('ironSkin')?1:0;
+
+  // ── BERSERKER: +1 dmg per 5 HP lost this fight ──
+  if(G.selectedDeck==='berserker'&&outcome==='win'){
+    const hpLost=Math.max(0, G.playerMaxHP - G.playerHP);
+    pPow += Math.floor(hpLost/5);
+  }
+
+  // ── LUCKY COIN ──
+  let luckyRedrawn=false;
+  if(outcome==='lose'&&hasBonus('luckyCoin')&&Math.random()<0.10){
+    outcome='draw'; luckyRedrawn=true; specialMsg+=' Lucky Coin: Redrew!';
+  }
+
+  // ── DOMINANCE: tie = win ──
+  if(outcome==='draw'&&G.dominanceTurns>0){ outcome='win'; G.dominanceTurns--; specialMsg+=' Dominance: Tie counts as win!'; }
+
+  let dmg=0, log='';
+  if(outcome==='win'){
+    // autoWin cards with power:0 use a baseline damage so the win actually hurts the CPU
+    dmg = pPow > 0 ? pPow : Math.max(4, Math.floor(G.cpuMaxHP * 0.15));
+    G.cpuHP-=dmg; G.loseStreak=0; G.cpuLoseStreak++;
+    G.totalWins++;
+    log=specialMsg||`Your ${pCard.name} beats ${cCard.name}! -${dmg} CPU HP`;
+    showDmgFloat(`-${dmg}`,true);
+    animSlot('p-slot','anim-win'); animSlot('c-slot','anim-lose');
+    if(eff('doubleDown')){ const d2=dmg; G.cpuHP-=d2; log+=` Double Down bonus: -${d2}!`; }
+    // Momentum: mark ready for NEXT turn's power doubling
+    if(eff('momentum')){ addEff('momentumReady',1); }
+  } else if(outcome==='lose'){
+    // autoLose cards with power:0 use cpu card power or a baseline
+    const baseDmg = cPow > 0 ? cPow : Math.max(4, Math.floor(G.playerMaxHP * 0.15));
+    dmg=Math.max(0,baseDmg-dmgReduce);
+    // ── PHANTOM: survive on 1 HP once per fight ──
+    if(G.selectedDeck==='phantom'&&!G.phantomSaved&&G.playerHP-dmg<=0){
+      dmg=G.playerHP-1; G.phantomSaved=true;
+      specialMsg+=' 👻 Phantom: Survived on 1 HP!';
+    }
+    G.playerHP-=dmg; G.loseStreak++; G.cpuLoseStreak=0;
+    G.totalLosses++;
+    log=specialMsg||`CPU's ${cCard.name} beats your ${pCard.name}! -${dmg} HP`;
+    showDmgFloat(`-${dmg}`,false);
+    animSlot('c-slot','anim-win'); animSlot('p-slot','anim-lose');
+    if(G.reinforcedPaperLost===false&&pType==='paper'&&cType==='rock') G.reinforcedPaperLost=true;
+    if(eff('doubleDown')){ const extra=cPow; G.playerHP-=extra; log+=` Double Down penalty: -${extra}!`; }
+    if(eff('counterStudy')){ addEff('mirrorNextCard',1,{cpuType:cCard.type}); log+=' Counter Study: Will mirror CPU type next turn!'; }
+    // Momentum punish: lose the momentum bonus if it was ready
+    if(eff('momentumReady')){ log+=' Momentum lost!'; }
+    if(G.copycatPending){ const copy=makeCard(cCard.id); if(copy) G.playerDeck.push(copy); log+=' Copycat: Added their card to your deck!'; G.copycatPending=false; }
+  } else {
+    log=specialMsg||`Draw! ${pCard.name} vs ${cCard.name} — equal power.`;
+  }
+  G.copycatPending=false;
+
+  checkStreaks();
+  await showResult(outcome==='win'?'Win!':(outcome==='lose'?'Loss!':'Draw!'), outcome, log);
+
+  // ── POST-RESOLVE EFFECT TRIGGERS ──
+  // sharp scissors
+  if(outcome==='win'&&eff('sharpScissors')&&pCard.type==='scissors'){ drawCards(1); renderHands(); }
+  // pebble toss: draw on lose
+  if(outcome==='lose'&&eff('pebbleTossLose')){ drawCards(1); renderHands(); log+=' Pebble Toss: Drew 1 on loss.'; }
+  // clean cut: CPU discards on win
+  if(outcome==='win'&&eff('cleanCutWin')&&G.cpuHand.length>0){ G.cpuHand.splice(Math.floor(Math.random()*G.cpuHand.length),1); renderCPUHand(); log+=' Clean Cut: CPU discards 1!'; }
+  // hesitation: draw on tie
+  if(outcome==='draw'&&eff('hesitationTie')){ drawCards(1); renderHands(); log+=' Hesitation: Tie — drew 1!'; }
+  // stone wall: bonus draw flag on tie
+  if(outcome==='draw'&&eff('stoneWallTie')){ G.stoneWallBonus=true; log+=' Stone Wall: +1 draw next round!'; }
+  // switchblade: if losing, switch to rock and re-resolve
+  if(outcome==='lose'&&eff('switchbladePending')){
+    const newOutcome=rpsResolve('rock',cCard.type,pCard.power,cCard.power);
+    if(newOutcome==='win'||newOutcome==='draw'){
+      outcome=newOutcome; log+=' Switchblade: Switched to Rock!';
+      if(newOutcome==='win'){ const extra=pCard.power; G.cpuHP=Math.max(0,G.cpuHP-extra); showDmgFloat(`-${extra}`,true); G.playerHP+=dmg; }
+    }
+  }
+  // rockslide: queue rock next turn
+  if(outcome==='win'&&eff('rockslidePending')){ G.rockslideQueued=true; log+=' Rockslide: Rock queued for next turn!'; }
+  // wild throw: double damage on win
+  if(outcome==='win'&&eff('wildThrowActive')){ const bonus=dmg; G.cpuHP=Math.max(0,G.cpuHP-bonus); showDmgFloat(`-${bonus}`,true); log+=` Wild Throw: Double damage! (${bonus} bonus)`; }
+  // perfect cut: remove weakest deck card on win
+  if(outcome==='win'&&eff('perfectCutWin')&&G.playerDeck.length>0){
+    G.playerDeck.sort((a,b)=>(a.power||0)-(b.power||0));
+    const removed=G.playerDeck.splice(0,1)[0];
+    log+=` Perfect Cut: Removed ${removed.name} permanently.`;
+  }
+  // chain reaction: track win streak for draw 3
+  if(outcome==='win'){ G.chainWinStreak=(G.chainWinStreak||0)+1; }
+  else { G.chainWinStreak=0; }
+  if(eff('chainReaction')&&outcome==='win'&&G.chainWinStreak>=2){ drawCards(3); renderHands(); log+=' Chain Reaction: 2-win streak — drew 3!'; }
+  // folding strategy: draw 2 on paper win
+  if(outcome==='win'&&eff('foldingStrat')&&pCard.type==='paper'){ drawCards(2); renderHands(); log+=' Folding Strategy: Paper win — drew 2!'; }
+  // dominant cycle sequence tracking
+  if(pCard.effect==='dominantCycle'||NEEDS_CPU.has(pCard.effect)){
+    const cycleOrder=['rock','paper','scissors'];
+    if(pType&&cycleOrder.includes(pType)){
+      const seq=G.dominantCycleSeq||[];
+      const expected=cycleOrder[seq.length%3];
+      if(pType===expected){ G.dominantCycleSeq=[...seq,pType].slice(-3); }
+      else { G.dominantCycleSeq=[pType]; }
+    }
+  }
+  // stone wall bonus from previous round
+  if(G.stoneWallBonus){ G.stoneWallBonus=false; drawCards(1); renderHands(); }
+  // fate engine effect (active from a previous play)
+  if(G.fateEngineActive&&pCard.effect!=='fateEngine'){
+    const roll=Math.ceil(Math.random()*6);
+    if(roll<=2){ log+=` ⚙️ Fate Engine roll ${roll}: symbol randomised next turn.`; addEff('fateRandom',1); }
+    else if(roll<=4){ log+=` ⚙️ Fate Engine roll ${roll}: ties count as wins this turn.`; if(outcome==='draw'){ outcome='win'; G.cpuHP=Math.max(0,G.cpuHP-4); } }
+    else { log+=` ⚙️ Fate Engine roll ${roll}: AUTO WIN!`; if(outcome!=='win'){ G.cpuHP=Math.max(0,G.cpuHP-5); outcome='win'; } }
+  }
+
+  G.luckMeter=clamp(G.luckMeter+2,0,100);
+  G.cpuSecondLastType=G.cpuLastType; G.cpuLastType=cCard.type;
+  G.lastPlayerType=pType; G.lastCpuType=cType;
+  G.totalRounds++;
+  if(outcome==='win') G.lastWinSnapshot={pCard:{...pCard},cCard:{...cCard},dmg};
+  G.lastFullRound={pCard:{...pCard},cCard:{...cCard},outcome,dmg,pType,cType};
+
+  tickEffects();
+  updateHeader();
+  checkGameOver('hp');
+  if(G.phase!=='gameover') await nextTurn();
+}
+
+async function doEarlyReturn(result, pCard, cCard, msg){
+  setLog(msg||result.msg||'');
+  if(result.dmgCpu){ G.cpuHP-=result.dmgCpu; showDmgFloat(`-${result.dmgCpu}`,true); }
+  if(result.dmgPlayer){ G.playerHP-=result.dmgPlayer; showDmgFloat(`-${result.dmgPlayer}`,false); }
+  if(result.healPlayer){ G.playerHP=Math.min(G.playerMaxHP,G.playerHP+result.healPlayer); }
+  await showResult(result.outcome==='win'?'Win!':(result.outcome==='lose'?'Loss!':'Effect!'), result.outcome||'draw', msg||'');
+  tickEffects(); updateHeader(); checkGameOver('hp');
+  if(G.phase!=='gameover') await nextTurn();
+}
+
+function handleSpecialEffect(pCard,cCard,pType,cType,pPow,cPow){
+  const r={pType,cType,pPow,cPow,autoWin:false,autoLose:false,msg:'',earlyReturn:false};
+  switch(pCard.effect){
+    case 'ironWill':
+      addEff('ironWillBuff',3);
+      if(pType==='rock') r.pPow=pPow+1;
+      r.msg='Iron Will: Rock +1 dmg for 3 turns!';
+      break;
+    case 'earthquake':
+      // Beats everything EXCEPT paper (paper still wraps rock)
+      if(cCard.type==='paper'){
+        r.msg='Earthquake: Paper resists the tremors — normal RPS!';
+      } else {
+        r.autoWin=true; r.pPow=5;
+        r.msg=`Earthquake crushes ${cCard.name}! Auto-win!`;
+      }
+      break;
+    case 'arcaneWrap':
+      r.autoWin=true; r.pPow=4;
+      r.msg='Arcane Wrap: Paper envelops everything — auto-win!';
+      break;
+    case 'twinBlade':
+      r.pType='scissors'; r.pPow=pPow+2;
+      r.msg='Twin Blade: Scissors with +2 power!';
+      break;
+    case 'rockLord':
+      if(cCard.type==='paper'){ r.cType='scissors'; r.msg='Rock Lord: Immune to Paper!'; }
+      else r.msg='Rock Lord active.';
+      break;
+    case 'inkFlood':
+      r.earlyReturn=true; r.dmgCpu=5; r.outcome='win';
+      r.msg='Ink Flood: 5 flat damage!';
+      break;
+    case 'mirror':
+      r.pType=cCard.type;
+      r.msg=`Mirror: Copied CPU's ${cCard.type}!`;
+      break;
+    case 'tripleStrike': {
+      // Deals highest of both powers + 2, always wins
+      const bestPow=Math.max(pPow,cPow)+2;
+      r.pPow=bestPow; r.autoWin=true;
+      r.msg=`Triple Strike! Overwhelming force — ${bestPow} damage!`;
+      break;
+    }
+    case 'chaosHand': {
+      const types=['rock','paper','scissors'];
+      r.pType=rand(types);
+      r.msg=`Chaos Hand: Card became ${r.pType}!`;
+      break;
+    }
+    case 'absPaper':
+      r.pType='paper'; r.autoWin=true; r.pPow=7;
+      r.msg='Absolute Paper: Nothing can stop it — 7 damage!';
+      break;
+    case 'reversal':
+      G.reversalPending=true;
+      r.msg='Reversal: If you lose this turn, the result flips!';
+      break;
+    case 'copycat':
+      G.copycatPending=true;
+      r.msg='Copycat: Lose this turn and their card joins your deck!';
+      break;
+    case 'gamblersHand': {
+      const types=['rock','paper','scissors'];
+      const t1=rand(types), t2=rand(types);
+      const r1=rpsResolve(t1,cCard.type,5,cCard.power);
+      const r2=rpsResolve(t2,cCard.type,5,cCard.power);
+      const best=(r1==='win'||r2==='win')?'win':(r1==='draw'||r2==='draw')?'draw':'lose';
+      if(best==='win'){ r.autoWin=true; r.pPow=5; }
+      else if(best==='lose') r.autoLose=true;
+      r.msg=`Gambler's Hand: Rolled ${t1} & ${t2} → best: ${best}!`;
+      break;
+    }
+    case 'fateTwist':
+      G.fateTwistPending=true;
+      r.msg='Fate Twist: A loss this turn will be rerolled!';
+      break;
+    case 'masterThree': {
+      // Best of all three vs the CPU card — take highest winning power
+      const allTypes=['rock','paper','scissors'];
+      const wins=allTypes.filter(t=>rpsResolve(t,cCard.type,5,cCard.power)==='win');
+      if(wins.length>0){
+        r.autoWin=true; r.pPow=pCard.power;
+        r.msg=`Master of Three: ${wins.join('+')} all beat ${cCard.type}! ${pCard.power} damage!`;
+      } else {
+        const draws=allTypes.filter(t=>rpsResolve(t,cCard.type,5,cCard.power)==='draw');
+        if(draws.length>0) r.msg=`Master of Three: Best result is a draw.`;
+        else { r.autoLose=true; r.msg=`Master of Three: Nothing beats ${cCard.type} this time!`; }
+      }
+      break;
+    }
+    case 'paradox':
+      r.earlyReturn=true; r.outcome='draw';
+      r.dmgCpu=pPow>0?pPow:4; r.dmgPlayer=cPow>0?cPow:4;
+      r.msg=`Paradox: Both strike! CPU takes ${r.dmgCpu}, you take ${r.dmgPlayer}!`;
+      break;
+    // ── NEW VS CARDS ──
+    case 'pebbleToss':
+      r.pType='rock';
+      r.msg='Pebble Toss: Playing Rock — if you lose, draw 1 card.';
+      // draw on lose is handled post-resolve
+      addEff('pebbleTossLose',1);
+      break;
+    case 'cleanCut':
+      r.pType='scissors';
+      r.msg='Clean Cut: Playing Scissors — win to make CPU discard 1.';
+      addEff('cleanCutWin',1);
+      break;
+    case 'hesitation':
+      r.pType='rock';
+      r.msg='Hesitation: Playing Rock — tie draws 1 card.';
+      addEff('hesitationTie',1);
+      break;
+    case 'stoneWall':
+      r.pType='rock';
+      r.msg='Stone Wall: Playing Rock — tie bonus: +1 draw next round.';
+      addEff('stoneWallTie',1);
+      break;
+    case 'switchblade': {
+      r.pType='scissors';
+      r.msg='Switchblade: Playing Scissors.';
+      // switching to rock on lose handled post-resolve
+      addEff('switchbladePending',1);
+      break;
+    }
+    case 'rockslide':
+      r.pType='rock';
+      r.msg='Rockslide: Playing Rock — win queues another Rock!';
+      addEff('rockslidePending',1);
+      break;
+    case 'wildThrow': {
+      const types=['rock','paper','scissors'];
+      r.pType=rand(types);
+      addEff('wildThrowActive',1);
+      r.msg=`Wild Throw: Symbol became ${r.pType}! Wins deal double damage.`;
+      break;
+    }
+    case 'swapTrick': {
+      const myType=pType, cpuT=cCard.type;
+      r.pType=cpuT; r.cType=myType;
+      r.msg=`Swap Trick: Your ${myType} ↔ CPU's ${cpuT}!`;
+      break;
+    }
+    case 'momentumBreak':
+      if(G.lastFullRound&&G.lastFullRound.outcome==='lose'){
+        r.autoWin=true; r.pPow=pCard.power;
+        r.msg='Momentum Breaker: CPU won last round — you auto-win!';
+      } else {
+        r.msg='Momentum Breaker: CPU didn\'t win last round — normal play.';
+      }
+      break;
+    case 'perfectCut':
+      r.pType='scissors'; r.pPow=pCard.power;
+      r.msg='Perfect Cut: Playing Scissors — win to remove a deck card.';
+      addEff('perfectCutWin',1);
+      break;
+    case 'boulderCrash':
+      r.pType='rock';
+      if(G.cpuLastType==='paper'){
+        r.pPow=pCard.power*2;
+        r.msg=`Boulder Crash: CPU played Paper last turn — DOUBLE DAMAGE (${r.pPow})!`;
+      } else {
+        r.pPow=pCard.power;
+        r.msg='Boulder Crash: Playing Rock.';
+      }
+      break;
+    case 'secretTech':
+      // plays normally but we show a special "hidden" label — effect is cosmetic + power bonus
+      r.pPow=pPow+1;
+      r.msg='Secret Technique: Symbol hidden until now — +1 power!';
+      break;
+    case 'stratRewrite': {
+      if(G.cpuLastType&&G.cpuSecondLastType){
+        const counter={rock:'paper',paper:'scissors',scissors:'rock'};
+        r.pType=counter[G.cpuLastType]||pType;
+        r.msg=`Strategy Rewrite: CPU plays ${G.cpuLastType} often — countering with ${r.pType}!`;
+      } else {
+        r.msg='Strategy Rewrite: Not enough CPU history yet — normal play.';
+      }
+      break;
+    }
+    case 'dominantCycle': {
+      const seq=G.dominantCycleSeq||[];
+      const needed=['rock','paper','scissors'];
+      const ok=seq.length>=3&&seq.slice(-3).every((t,i)=>t===needed[i]);
+      if(ok){
+        r.autoWin=true; r.pPow=pCard.power;
+        G.dominantCycleSeq=[];
+        r.msg='Dominant Cycle: Rock→Paper→Scissors complete — AUTO WIN!';
+      } else {
+        // Register this card's type for tracking
+        const seqTypes=['rock','paper','scissors'];
+        const nextExpected=needed[seq.length%3];
+        if(seqTypes.includes(pType)){
+          r.msg=`Dominant Cycle: Progress ${seq.length+1}/3 toward sequence.`;
+        } else {
+          r.msg='Dominant Cycle: Track sequence Rock→Paper→Scissors.';
+        }
+      }
+      break;
+    }
+    case 'schrodingers': {
+      const types=['rock','paper','scissors'];
+      const wins=types.filter(t=>rpsResolve(t,cCard.type,pCard.power,cCard.power)==='win');
+      if(wins.length>0){ r.pType=wins[0]; r.autoWin=true; r.pPow=pCard.power; r.msg=`Schrödinger's: Collapsed to ${wins[0]} — WIN!`; }
+      else { r.pType=rand(types); r.msg=`Schrödinger's: Collapsed to ${r.pType}.`; }
+      break;
+    }
+    case 'timeThief': {
+      const stolen=cCard.type;
+      r.pType=stolen;
+      const types=['rock','paper','scissors'];
+      r.cType=rand(types);
+      r.msg=`Time Thief: Stole CPU's ${stolen}! They now play random (${r.cType}).`;
+      break;
+    }
+    case 'absMirror': {
+      const counter={rock:'paper',paper:'scissors',scissors:'rock'};
+      r.pType=counter[cCard.type]||pType;
+      r.autoWin=true; r.pPow=pCard.power;
+      r.msg=`Absolute Mirror: CPU plays ${cCard.type} — perfectly countered with ${r.pType}!`;
+      break;
+    }
+    case 'theDealer': {
+      const types=['rock','paper','scissors'];
+      const draws=[rand(types),rand(types),rand(types)];
+      const results=draws.map(t=>({t,res:rpsResolve(t,cCard.type,5,cCard.power)}));
+      const best=results.find(x=>x.res==='win')||results.find(x=>x.res==='draw')||results[0];
+      if(best.res==='win'){ r.autoWin=true; r.pPow=6; }
+      else if(best.res==='lose'){ r.autoLose=true; }
+      r.msg=`The Dealer: Drew ${draws.join('+')} — best: ${best.t} (${best.res})!`;
+      break;
+    }
+    case 'fateEngine':
+      // Activates fate engine for future rounds — this turn plays normally
+      G.fateEngineActive=true;
+      r.msg='Fate Engine: Wound up — the machine now controls your fate each round!';
+      break;
+  }
+  // Iron Will passive: apply each turn it's active (for cards that land as rock)
+  if((r.pType==='rock'||pType==='rock')&&eff('ironWillBuff')&&pCard.effect!=='ironWill'){
+    r.pPow=(r.pPow||pPow)+1;
+  }
+  // Counter Study: override pType to CPU's last type
+  const mnc=eff('mirrorNextCard');
+  if(mnc){ r.pType=mnc.cpuType; r.msg=(r.msg?r.msg+' ':'')+'(Counter Study: mirroring CPU!)'; }
+  return r;
+}
+
+function rpsResolve(pType,cType,pPow,cPow){
+  if(pType===cType){
+    // Practice Cut: scissors wins ties this turn
+    if(eff('practiceCutActive')&&pType==='scissors') return 'win';
+    // Paper Shield: losing with paper becomes draw
+    if(eff('paperShieldActive')&&pType==='paper') return 'draw';
+    if(pPow>cPow) return 'win';
+    if(pPow<cPow) return 'lose';
+    return 'draw';
+  }
+  if((pType==='rock'&&cType==='scissors')||(pType==='scissors'&&cType==='paper')||(pType==='paper'&&cType==='rock')) return 'win';
+  // Paper Shield: if paper would lose to scissors, make it a draw
+  if(eff('paperShieldActive')&&pType==='paper'&&cType==='scissors') return 'draw';
+  return 'lose';
+}
+
+// ═══════════════════════════════════════════════════
+//  TRIAL MINI-GAME
+// ═══════════════════════════════════════════════════
+// ── GAVEL SOUND (Web Audio API) ──
+function playGavel(times=3){
+  try{
+    const ctx=new(window.AudioContext||window.webkitAudioContext)();
+    const hit=(when, vol=1)=>{
+      // Thud — low impact body
+      const buf=ctx.createBuffer(1,ctx.sampleRate*0.18,ctx.sampleRate);
+      const data=buf.getChannelData(0);
+      for(let i=0;i<data.length;i++){
+        const t=i/ctx.sampleRate;
+        // low woody thud with fast decay
+        data[i]=(Math.random()*2-1)*Math.exp(-t*45)*vol
+                +(Math.sin(2*Math.PI*180*t)*Math.exp(-t*30)*0.6*vol)
+                +(Math.sin(2*Math.PI*90*t)*Math.exp(-t*20)*0.4*vol);
+      }
+      const src=ctx.createBufferSource();
+      src.buffer=buf;
+      // High crack transient
+      const crackBuf=ctx.createBuffer(1,ctx.sampleRate*0.04,ctx.sampleRate);
+      const cdata=crackBuf.getChannelData(0);
+      for(let i=0;i<cdata.length;i++){
+        const t=i/ctx.sampleRate;
+        cdata[i]=(Math.random()*2-1)*Math.exp(-t*180)*vol*0.8;
+      }
+      const crackSrc=ctx.createBufferSource();
+      crackSrc.buffer=crackBuf;
+      // Resonance — wooden block ring
+      const osc=ctx.createOscillator();
+      const oscGain=ctx.createGain();
+      osc.frequency.value=420;
+      osc.type='triangle';
+      oscGain.gain.setValueAtTime(0.3*vol,when);
+      oscGain.gain.exponentialRampToValueAtTime(0.001,when+0.12);
+      osc.connect(oscGain); oscGain.connect(ctx.destination);
+      osc.start(when); osc.stop(when+0.15);
+      const gain=ctx.createGain();
+      gain.gain.value=1;
+      src.connect(gain); gain.connect(ctx.destination);
+      crackSrc.connect(gain);
+      src.start(when); crackSrc.start(when);
+    };
+    const spacing=0.42;
+    for(let i=0;i<times;i++) hit(ctx.currentTime+i*spacing, i===times-1?1.3:0.9);
+    // Close context after sounds finish
+    setTimeout(()=>{ try{ ctx.close(); }catch{} }, (times*spacing+0.5)*1000);
+  } catch(e){ /* audio not supported — silent fallback */ }
+}
+
+async function startTrial(lastCpuCard){
+  // Play gavel before showing the overlay
+  playGavel(3);
+  await delay(200); // brief pause so first hit lands before overlay appears
+  // Set up trial state
+  G.trialState={
+    guessesLeft:6,      // total chances
+    correctCount:0,     // total correct guesses
+    streakCount:0,      // consecutive correct
+    inStreak:false,
+    cpuHand: generateTrialHand(),   // cpu's 3 cards (refresh each play)
+    cpuPlayed:null,
+    results:[],         // 'correct'|'wrong' per guess
+    resolved:false,
+    lastCpuCard,
+  };
+  G.phase='trial';
+  renderTrialOverlay();
+  document.getElementById('trial-overlay').classList.add('active');
+}
+
+function generateTrialHand(){
+  // Always exactly 1 rock, 1 paper, 1 scissors
+  return shuffle([makeCard('rock4'),makeCard('paper4'),makeCard('scissors4')]);
+}
+
+function renderTrialOverlay(){
+  const ts=G.trialState;
+  // progress pips
+  const prog=document.getElementById('trial-progress'); prog.innerHTML='';
+  for(let i=0;i<6;i++){
+    const pip=document.createElement('div'); pip.className='trial-pip';
+    if(i<ts.results.length){
+      pip.classList.add(ts.results[i]);
+      if(ts.results[i]==='correct'&&ts.streakCount>=3) pip.classList.add('streak');
+    }
+    prog.appendChild(pip);
+  }
+  // cpu hand display
+  const cpuArea=document.getElementById('trial-cpu-area'); cpuArea.innerHTML='';
+  ts.cpuHand.forEach(c=>{
+    const div=buildCardEl(c); div.classList.add('no-hover');
+    div.style.cursor='default'; cpuArea.appendChild(div);
+  });
+  // status
+  document.getElementById('trial-status').textContent=
+    `Guesses left: ${ts.guessesLeft} · Correct: ${ts.correctCount}/3 · Streak: ${ts.streakCount}`;
+  document.getElementById('trial-log').textContent='Pick a button to guess the CPU\'s next card...';
+  document.getElementById('trial-result-area').innerHTML='';
+}
+
+async function trialGuess(guessType){
+  const ts=G.trialState;
+  if(!ts||ts.resolved||G.phase!=='trial') return;
+
+  // CPU picks randomly from their 3 cards
+  const idx=Math.floor(Math.random()*ts.cpuHand.length);
+  const cpuCard=ts.cpuHand.splice(idx,1)[0];
+
+  const correct=(guessType===cpuCard.type);
+  ts.results.push(correct?'correct':'wrong');
+  ts.guessesLeft--;
+
+  if(correct){
+    ts.correctCount++;
+    ts.streakCount++;
+    document.getElementById('trial-log').textContent=`✅ Correct! CPU played ${cpuCard.type}. (${ts.correctCount}/3 correct)`;
+  } else {
+    ts.streakCount=0;
+    document.getElementById('trial-log').textContent=`❌ Wrong! CPU played ${cpuCard.type}.`;
+  }
+
+  // Refresh CPU hand
+  if(ts.cpuHand.length===0) ts.cpuHand=generateTrialHand();
+
+  renderTrialOverlay();
+  await delay(600);
+
+  // Check win conditions
+  const perfectStreak=ts.streakCount>=3;
+  const threeDone=ts.correctCount>=3;
+  const outOfGuesses=ts.guessesLeft<=0;
+
+  if(perfectStreak){
+    // 3 in a row: instant win + absorb HP + absorb cards
+    ts.resolved=true;
+    await trialOutcome('perfect');
+  } else if(threeDone){
+    // 3 correct not in a row: half HP, half cards
+    ts.resolved=true;
+    await trialOutcome('success');
+  } else if(outOfGuesses){
+    // Failed
+    ts.resolved=true;
+    await trialOutcome('fail');
+  }
+}
+
+async function trialOutcome(result){
+  const overlay=document.getElementById('trial-overlay');
+  const resArea=document.getElementById('trial-result-area');
+  resArea.innerHTML='';
+
+  const div=document.createElement('div'); div.className='trial-result-big';
+
+  if(result==='perfect'){
+    div.style.color='var(--scissors-l)';
+    div.textContent='⚡ PERFECT! Instant Victory!';
+    resArea.appendChild(div);
+    await delay(1200);
+    // Add all remaining CPU HP to player
+    const bonusHP=Math.max(0,G.cpuHP);
+    G.playerHP+=bonusHP; G.playerMaxHP+=bonusHP;
+    // Add all CPU's deck cards to player
+    const cardsTaken=[...G.cpuHand,...G.cpuDeck];
+    cardsTaken.forEach(c=>G.playerDeck.push(c));
+    G.cpuHand=[]; G.cpuDeck=[];
+    G.cpuHP=0;
+    setLog(`Trial Perfect! Absorbed ${bonusHP} HP and ${cardsTaken.length} cards!`);
+    overlay.classList.remove('active');
+    G.phase='idle';
+    updateHeader();
+    await winFight();
+  } else if(result==='success'){
+    div.style.color='var(--gold)';
+    div.textContent='✅ Success! Half their HP and cards claimed!';
+    resArea.appendChild(div);
+    await delay(1200);
+    const halfHP=Math.floor(G.cpuHP/2);
+    G.cpuHP-=halfHP; G.playerHP=Math.min(G.playerMaxHP,G.playerHP+halfHP);
+    const halfCards=Math.floor(G.cpuHand.length/2);
+    const taken=G.cpuHand.splice(0,halfCards);
+    taken.forEach(c=>G.playerDeck.push(c));
+    setLog(`Trial Success! Claimed ${halfHP} HP and ${taken.length} cards!`);
+    overlay.classList.remove('active');
+    G.phase='idle';
+    updateHeader();
+    await nextTurn();
+  } else {
+    div.style.color='var(--t2)';
+    div.textContent='No reward — but no penalty either.';
+    resArea.appendChild(div);
+    await delay(1000);
+    overlay.classList.remove('active');
+    G.phase='idle';
+    await nextTurn();
+  }
+}
+
+// ═══════════════════════════════════════════════════
+//  BUFF USAGE
+// ═══════════════════════════════════════════════════
+async function useSelectedBuff(){
+  if(!G.selectedBuff||G.buffUsedThisRound||G.phase!=='idle') return;
+  const bi=G.playerBuffHand.findIndex(c=>c.uid===G.selectedBuff);
+  if(bi<0) return;
+  const buff=G.playerBuffHand[bi];
+  G.buffUsedThisRound=true;
+  G.selectedBuff=null;
+
+  // special handling for predict engine
+  if(buff.effect==='predictEngine'){
+    const isFree=hasBonus('tarotCards')&&!G.activeEffects.find(e=>e.id==='tarotUsed');
+    if(isFree) addEff('tarotUsed',99);
+    const topCpu=G.cpuHand[0];
+    if(!topCpu){ setLog('No CPU card to predict!'); return; }
+    if(G.canPeekCPU&&!isFree){ setLog('Cannot use Predict Engine while peeking!'); G.buffUsedThisRound=false; return; }
+    const types=['rock','paper','scissors'];
+    const guess=prompt(`Predict the CPU's next card type:\nType: rock, paper, or scissors`);
+    if(!guess) { G.buffUsedThisRound=false; return; }
+    const g=guess.trim().toLowerCase();
+    if(!types.includes(g)){ setLog('Invalid guess!'); G.buffUsedThisRound=false; return; }
+    if(g===topCpu.type){
+      addEff('predictCorrect',1); setLog('✅ Correct prediction! Auto win on next play!');
+    } else {
+      if(!isFree){ G.playerHP=Math.floor(G.playerHP/2); setLog('❌ Wrong prediction! Lost half your HP!'); updateHeader(); checkGameOver('hp'); }
+      else setLog('❌ Wrong prediction! (Tarot Cards saved you)');
+    }
+    renderBuffHand(); renderHands(); return;
+  }
+
+  // apply buff effect for this turn
+  addEff('buffActive',1,{buffEffect:buff.effect});
+  // Track last buff for echo chamber
+  G.activeEffects=G.activeEffects.filter(e=>e.id!=='lastBuffEffect');
+  G.activeEffects.push({id:'lastBuffEffect',dur:99,effect:buff.effect});
+  // register specific effect trackers
+  if(buff.effect==='sharpScissors') addEff('sharpScissors',1);
+  if(buff.effect==='mirrorTrap')    addEff('mirrorTrap',1);
+  if(buff.effect==='echoPlay')      addEff('echoPlay',1);
+  if(buff.effect==='counterStudy')  addEff('counterStudy',1);
+  if(buff.effect==='momentum')      addEff('momentum',1);
+  // shatter/shear/folding are handled purely via buffActive.buffEffect in resolveCards
+
+  setLog(`Buff activated: ${buff.name} — ${buff.ability}`);
+  renderBuffHand(); renderHands(); updateButtons();
+}
+
+// ═══════════════════════════════════════════════════
+//  FIELD / ANIMATION
+// ═══════════════════════════════════════════════════
+function showSlotCards(pCard,cCard){
+  const ps=document.getElementById('p-slot'), cs=document.getElementById('c-slot');
+  ps.innerHTML=''; ps.classList.add('filled');
+  cs.innerHTML=''; cs.classList.add('filled');
+  const pe=buildCardEl(pCard); pe.classList.add('in-battle','anim-play'); ps.appendChild(pe);
+  const ce=buildCardEl(cCard); ce.classList.add('in-battle','anim-play'); ce.style.animationDelay='.1s'; cs.appendChild(ce);
+}
+
+function animSlot(slotId,cls){
+  const el=document.getElementById(slotId).querySelector('.card');
+  if(!el) return;
+  el.classList.add(cls);
+  el.addEventListener('animationend',()=>el.classList.remove(cls),{once:true});
+}
+
+function clearField(){
+  const ps=document.getElementById('p-slot'), cs=document.getElementById('c-slot');
+  ps.innerHTML='Your Card'; ps.classList.remove('filled');
+  cs.innerHTML='CPU Card'; cs.classList.remove('filled');
+  document.querySelectorAll('.result-banner').forEach(e=>e.remove());
+  // make sure VS field is shown, solo is hidden
+  document.getElementById('battle-field').style.display='flex';
+  document.getElementById('solo-field').style.display='none';
+}
+
+async function showResult(text, outcome, log){
+  const field=document.getElementById('battle-field');
+  const b=document.createElement('div');
+  b.className=`result-banner ${outcome}`;
+  b.textContent=text; field.appendChild(b);
+  if(log) setLog(log);
+  await delay(1100); b.remove();
+}
+
+function showDmgFloat(text,isRight){
+  const field=document.getElementById('battle-field');
+  const el=document.createElement('div');
+  el.className='dmg-float';
+  el.textContent=text;
+  el.style.color=isRight?'var(--scissors-l)':'var(--rock-l)';
+  el.style.left=isRight?'62%':'10%'; el.style.top='35%';
+  field.appendChild(el);
+  setTimeout(()=>el.remove(),1500);
+}
+
+// ═══════════════════════════════════════════════════
+//  STREAKS
+// ═══════════════════════════════════════════════════
+function checkStreaks(){
+  if(G.loseStreak>=3&&!G.canPeekCPU){
+    G.canPeekCPU=true;
+    document.getElementById('peek-badge').style.display='inline';
+    setLog('⚡ Lose streak! You can now peek the CPU hand!');
+    renderCPUHand();
+  }
+  const sd=document.getElementById('streak-display');
+  const parts=[];
+  if(G.loseStreak>0) parts.push(`Lose streak: ${G.loseStreak}`);
+  if(G.cpuLoseStreak>0) parts.push(`CPU lose: ${G.cpuLoseStreak}`);
+  sd.textContent=parts.join(' | ');
+}
+
+function renderEffects(){ updateActiveEffectsDisplay(); }
+
+// ═══════════════════════════════════════════════════
+//  NEXT TURN
+// ═══════════════════════════════════════════════════
+async function nextTurn(){
+  G.phase='idle';
+  G.buffUsedThisRound=false;
+  clearField();
+  // Rockslide: automatically queue a rock card next turn
+  if(G.rockslideQueued){
+    G.rockslideQueued=false;
+    const rockCard=G.playerDeck.find(c=>c.type==='rock')||G.playerHand.find(c=>c.type==='rock');
+    if(rockCard){
+      const idx=G.playerDeck.findIndex(c=>c.uid===rockCard.uid);
+      if(idx>=0) G.playerDeck.splice(idx,1);
+      G.playerHand.unshift(rockCard);
+      setLog('🏔️ Rockslide: Rock card moved to front of hand!');
+    }
+  }
+  if(G.playerHand.length===0) drawCards(Math.min(3,G.playerDeck.length));
+  if(G.cpuHand.length===0) cpuDraw(5);
+  renderHands(); updateButtons();
+  if(G.cpuHP<=0){ await winFight(); return; }
+  if(G.playerHP<=0){ checkGameOver('hp'); return; }
+  if(eff('predictCorrect')){ setLog('🎯 Predict Engine: Your next play auto-wins!'); }
+}
+
+// ═══════════════════════════════════════════════════
+//  WIN / LOSE FIGHT
+// ═══════════════════════════════════════════════════
+async function winFight(){
+  G.phase='shop';
+  PERSIST.wins++;
+  PERSIST.totalOpponents=(PERSIST.totalOpponents||0)+1;
+  // Count unique cards owned for Collector unlock
+  PERSIST.cardsOwned=PERSIST.unlocked.filter(id=>CARDS[id]).length;
+  savePersist(PERSIST);
+
+  // Check cross-run unlocks
+  if(PERSIST.totalOpponents>=100) unlockCard('deck_grandmaster');
+  if(PERSIST.cardsOwned>=50) unlockCard('deck_collector');
+
+  const bonus=hasBonus('goldHands')?3:0;
+  const earned=6+(G.round*2)+bonus+(G.isBossFight?10:0);
+  G.playerGold+=earned;
+  G.luckMeter=clamp(G.luckMeter+10,0,100);
+  unlockCardsForRound(G.round);
+
+  // Boss defeat: award legendary card and show dialogue
+  if(G.isBossFight && G.cpuOpponent){
+    const boss=G.cpuOpponent;
+    G.bossesDefeated++;
+    if(boss.legendaryCard && CARDS[boss.legendaryCard]){
+      unlockCard(boss.legendaryCard);
+      const reward=makeCard(boss.legendaryCard);
+      if(reward) G.playerDeck.push(reward);
+      const cdef=CARDS[boss.legendaryCard];
+      setLog(`⚔️ ${boss.loss} You earned: ${cdef.icon} ${cdef.name}!`);
+      await delay(2500);
+    } else {
+      setLog(`⚔️ ${boss.loss||'Boss defeated!'}`);
+      await delay(1800);
+    }
+    // Check boss deck unlock
+    const allBossesDefeated = BOSS_ROSTER.every((_,i)=> PERSIST.unlocked.includes('boss_'+i));
+    if(allBossesDefeated) unlockCard('deck_the_boss_deck');
+    PERSIST.unlocked.push('boss_'+BOSS_ROSTER.indexOf(boss));
+    savePersist(PERSIST);
+  }
+
+  // ── HOARDER: track shop skips, add common every 3 battles ──
+  if(G.isHoarder){
+    G.hoarderBattleCount++;
+    G.hoarderCommonTimer++;
+    if(G.hoarderCommonTimer>=3){
+      G.hoarderCommonTimer=0;
+      const commons=['rock3','paper3','scissors3','rock4','paper4','scissors4'];
+      const added=makeCard(rand(commons));
+      if(added) G.playerDeck.push(added);
+    }
+    if(G.hoarderBattleCount>=10){
+      unlockCard('deck_hoarder');
+      savePersist(PERSIST);
+    }
+  }
+
+  if(G.round>=G.maxRounds){ showVictory(); return; }
+  G.round++;
+
+  if(G.isHoarder){
+    G.hoarderShopSkips++;
+    showHoarderPick();
+    return;
+  }
+
+  if(Math.random()<0.6) showBonusScreen();
+  else showShop();
+}
+
+function unlockCardsForRound(r){
+  const unlocks={
+    1:['rock5','paper5','scissors5','fortify','reversal','pebble_toss','hesitation','stone_wall','careful_plan'],
+    2:['rock6','paper6','scissors6','earthquake','mend','copycat','gamblers_hand','pattern_break',
+       'clean_cut','paper_shield','sharp_reflex','scramble','practice_cut','field_notes',
+       'switchblade','rockslide','folding_strat','trap_setup','disruption','adaptation'],
+    3:['twin_blade','rock_lord','ink_flood','shatter_rock','shear_force','folding_tech',
+       'wild_throw','focus_card','chain_reaction','symbol_lock','momentum_break','boulder_crash',
+       'swap_trick','triple_mind','perfect_cut','secret_tech','strat_rewrite','echo_chamber','dominant_cycle'],
+    4:['triple_strike','the_jester','chaos_hand','abs_paper','temporal','pat_breaker','dominance',
+       'predict_engine','time_loop','fate_twist','master_three','paradox_card','trial_card',
+       'forced_choice','schrodingers','time_thief','abs_mirror','the_dealer','fate_engine','momentum_break'],
+    5:['deck_strategist','deck_combo','deck_phantom','deck_berserker'],
+  };
+  (unlocks[r]||[]).forEach(id=>unlockCard(id));
+}
+
+// ═══════════════════════════════════════════════════
+//  HOARDER CARD PICK
+// ═══════════════════════════════════════════════════
+function showHoarderPick(){
+  // Build pool from the defeated CPU's full deck + hand
+  const pool=[...G.cpuDeck,...G.cpuHand];
+  if(pool.length===0){ afterHoarderPick(); return; }
+  G.hoarderPicks=[];
+  const grid=document.getElementById('hoarder-card-grid'); grid.innerHTML='';
+  shuffle(pool).slice(0,12).forEach(card=>{
+    const div=buildCardEl(card);
+    div.classList.add('hoarder-pick');
+    div.dataset.uid=card.uid;
+    div.onclick=()=>toggleHoarderPick(div,card);
+    grid.appendChild(div);
+  });
+  document.getElementById('hoarder-picks-left').textContent='Picks remaining: 3';
+  document.getElementById('hoarder-confirm-btn').disabled=true;
+  showScreen('hoarder');
+}
+
+function toggleHoarderPick(div,card){
+  const already=G.hoarderPicks.findIndex(c=>c.uid===card.uid);
+  if(already>=0){
+    G.hoarderPicks.splice(already,1);
+    div.classList.remove('chosen');
+  } else {
+    if(G.hoarderPicks.length>=3) return; // max 3
+    G.hoarderPicks.push(card);
+    div.classList.add('chosen');
+  }
+  const left=3-G.hoarderPicks.length;
+  document.getElementById('hoarder-picks-left').textContent=
+    left===0?'Ready to confirm!': `Picks remaining: ${left}`;
+  document.getElementById('hoarder-confirm-btn').disabled=G.hoarderPicks.length===0;
+}
+
+function confirmHoarderPicks(){
+  G.hoarderPicks.forEach(c=>G.playerDeck.push(makeCard(c.id)));
+  G.hoarderPicks=[];
+  afterHoarderPick();
+}
+
+function afterHoarderPick(){
+  if(Math.random()<0.5) showBonusScreen();
+  else beginFight();
+}
+
+
+// ═══════════════════════════════════════════════════
+//  BONUS SCREEN
+// ═══════════════════════════════════════════════════
+function showBonusScreen(){
+  G.prevScreen='battle';
+  // pick 3 random bonuses not already owned
+  const available=BONUS_POOL.filter(b=>!G.activeBonuses.includes(b.effect));
+  const choices=shuffle([...available]).slice(0,3);
+  const grid=document.getElementById('bonus-grid'); grid.innerHTML='';
+  choices.forEach(b=>{
+    const div=document.createElement('div'); div.className='bonus-card';
+    div.innerHTML=`<div class="bonus-icon">${b.icon}</div><div class="bonus-name">${b.name}</div><div class="bonus-desc">${b.desc}</div>`;
+    div.onclick=()=>choosebonus(b.effect);
+    grid.appendChild(div);
+  });
+  showScreen('bonus');
+}
+
+function choosebonus(effectId){
+  G.activeBonuses.push(effectId);
+  document.querySelectorAll('.bonus-card').forEach(c=>c.classList.remove('chosen'));
+  if(G.isHoarder) beginFight();
+  else showShop();
+}
+
+function skipBonus(){
+  if(G.isHoarder) beginFight();
+  else showShop();
+}
+
+// ═══════════════════════════════════════════════════
+//  SHOP
+// ═══════════════════════════════════════════════════
+const shopPurchased=new Set();
+
+function showShop(){
+  showScreen('shop');
+  document.getElementById('shop-sub').textContent=`Preparing for Round ${G.round} — ${(CPU_ROSTER[Math.min(G.round-1,CPU_ROSTER.length-1)]||{}).name||'Unknown'}`;
+  updateHeader();
+  renderShop();
+}
+
+function renderShop(){
+  const grid=document.getElementById('shop-grid'); grid.innerHTML='';
+  if(G.isHoarder){
+    const msg=document.createElement('div'); msg.className='shop-locked-msg';
+    msg.innerHTML='🏚️ <strong>Stockpile</strong> — You cannot buy cards from the shop.<br>Beat opponents to claim their cards instead.';
+    grid.appendChild(msg);
+    return;
+  }
+  SHOP_ITEMS.forEach(item=>{
+    const bought=shopPurchased.has(item.id)&&item.once;
+    const afford=G.playerGold>=item.cost;
+    const div=document.createElement('div'); div.className='shop-item';
+    div.innerHTML=`
+      <div class="shop-item-h"><div class="shop-item-icon">${item.icon}</div><div class="shop-item-name">${item.name}</div></div>
+      <div class="shop-item-desc">${item.desc}</div>
+      <div class="shop-item-foot">
+        <div class="shop-cost">${item.cost}</div>
+        ${bought?'<span class="sold-tag">Purchased</span>':`<button class="btn xs${afford?'':' danger'}" onclick="buyItem('${item.id}')" ${!afford||bought?'disabled':''}>Buy</button>`}
+      </div>`;
+    grid.appendChild(div);
+  });
+}
+
+function buyItem(id){
+  const item=SHOP_ITEMS.find(i=>i.id===id);
+  if(!item||G.playerGold<item.cost) return;
+  G.playerGold-=item.cost;
+  if(item.type==='pack') item.cards.forEach(c=>{ const card=makeCard(c); if(card) G.playerDeck.push(card); });
+  else if(item.type==='single'){ const card=makeCard(item.card); if(card) G.playerDeck.push(card); }
+  else if(item.id==='up_hp'){ G.playerMaxHP+=10; G.playerHP=Math.min(G.playerHP+5,G.playerMaxHP); }
+  else if(item.id==='up_deck'){ ['rock4','paper4','scissors4','rock5','paper5'].forEach(c=>G.playerDeck.push(makeCard(c))); }
+  else if(item.id==='heal_full'){ G.playerHP=G.playerMaxHP; }
+  if(item.once) shopPurchased.add(id);
+  updateHeader(); renderShop();
+}
+
+function continueRun(){
+  shopPurchased.clear();
+  beginFight();
+}
+
+// ═══════════════════════════════════════════════════
+//  GAME OVER / VICTORY
+// ═══════════════════════════════════════════════════
+function checkGameOver(reason){
+  if(G.playerHP<=0){ G.phase='gameover'; showGameOver('Your health reached zero.'); }
+  else if(G.playerDeck.length===0&&G.playerHand.length===0){ G.phase='gameover'; showGameOver('Your deck ran dry!'); }
+}
+
+function showGameOver(reason){
+  document.getElementById('go-reason').textContent=reason;
+  const bDiv=document.getElementById('go-bonuses'); bDiv.innerHTML='';
+  G.activeBonuses.forEach(b=>{const bd=BONUS_POOL.find(x=>x.effect===b);if(bd){const p=document.createElement('div');p.className='bonus-pill';p.textContent=bd.name;bDiv.appendChild(p);}});
+  document.getElementById('go-stats').innerHTML=`<span>Rounds</span><strong>${G.round-1}/${G.maxRounds}</strong><span>Wins</span><strong>${G.totalWins}</strong><span>Deck</span><strong>${G.selectedDeck||'?'}</strong><span>Gold left</span><strong>${G.playerGold}</strong>`;
+  showScreen('gameover');
+}
+
+function showVictory(){
+  document.getElementById('vic-stats').innerHTML=`<span>All rounds beaten!</span><strong>✓</strong><span>Total wins</span><strong>${G.totalWins}</strong><span>Luck</span><strong>${G.luckMeter}%</strong><span>Gold</span><strong>${G.playerGold}</strong>`;
+  const bDiv=document.getElementById('vic-bonuses'); bDiv.innerHTML='';
+  G.activeBonuses.forEach(b=>{const bd=BONUS_POOL.find(x=>x.effect===b);if(bd){const p=document.createElement('div');p.className='bonus-pill';p.textContent=bd.name;bDiv.appendChild(p);}});
+  // unlock decks
+  unlockCard('deck_strategist'); unlockCard('deck_combo');
+  savePersist(PERSIST);
+  showScreen('victory');
+}
+
+function goToStart(){
+  G.selectedDeck=null;
+  initStart();
+  showScreen('start');
+}
+
+// ═══════════════════════════════════════════════════
+//  COLLECTION
+// ═══════════════════════════════════════════════════
+function showCollection(){
+  G.prevScreen=document.querySelector('.screen.active')?.id?.replace('-screen','')||'start';
+  renderCollection(document.getElementById('coll-body'));
+  document.getElementById('coll-stats2').textContent=`${PERSIST.unlocked.length} cards unlocked · ${PERSIST.runs} runs · ${PERSIST.wins} victories`;
+  showScreen('collection');
+}
+
+function renderCollection(container){
+  container.innerHTML='';
+  const rarities=['common','uncommon','rare','legendary'];
+  rarities.forEach(rar=>{
+    const cards=Object.entries(CARDS).filter(([id,c])=>c.rarity===rar&&!c.isbuff&&isUnlocked(id));
+    const buffs=Object.entries(CARDS).filter(([id,c])=>c.rarity===rar&&c.isbuff&&isUnlocked(id));
+    if(cards.length===0&&buffs.length===0) return;
+    const sec=document.createElement('div'); sec.className='coll-section';
+    const h=document.createElement('div'); h.className=`rarity-header ${rar}`;
+    h.textContent=rar.toUpperCase()+' CARDS ('+cards.length+' play, '+buffs.length+' buff)';
+    sec.appendChild(h);
+    const grid=document.createElement('div'); grid.className='coll-grid';
+    [...cards,...buffs].forEach(([id,c])=>{
+      const div=buildCardEl(makeCard(id)); div.classList.add('no-hover');
+      div.style.cursor='pointer'; div.title='Click for details';
+      div.onclick=()=>showCardDetail(id);
+      grid.appendChild(div);
+    });
+    sec.appendChild(grid); container.appendChild(sec);
+    // locked section
+    const locked=Object.entries(CARDS).filter(([id,c])=>c.rarity===rar&&!isUnlocked(id));
+    if(locked.length){
+      const lh=document.createElement('div');lh.style.cssText='font-size:.7rem;color:var(--t3);margin:.3rem 0 .5rem;font-style:italic;';
+      lh.textContent=`${locked.length} locked card${locked.length>1?'s':''} in this rarity`;
+      sec.appendChild(lh);
+    }
+  });
+  if(container.children.length===0){
+    container.innerHTML='<p style="color:var(--t2);text-align:center;margin-top:2rem;">Play to unlock cards!</p>';
+  }
+}
+
+function renderCollectionInline(){
+  const el=document.getElementById('coll-inner'); if(!el) return;
+  renderCollection(el);
+  document.getElementById('coll-summary').textContent=`${PERSIST.unlocked.length} cards unlocked · ${PERSIST.runs} runs`;
+}
+
+function goBack(){
+  if(G.prevScreen) showScreen(G.prevScreen);
+  else goToStart();
+}
+
+// ═══════════════════════════════════════════════════
+//  DEV CONSOLE COMMANDS  (type in browser console)
+// ═══════════════════════════════════════════════════
+const ssp = {
+  help(){
+    const cmds = [
+      ['ssp.heal(n)',          'Add n HP (default 100). e.g. ssp.heal(50)'],
+      ['ssp.god()',            'Set HP to 9999 and max HP to 9999'],
+      ['ssp.gold(n)',          'Add n gold (default 100)'],
+      ['ssp.unlockAll()',      'Unlock all decks and all cards in collection'],
+      ['ssp.unlockDeck(id)',   'Unlock a specific deck. ids: warrior trickster sage brawler tactician gambler strategist combo hoarder phantom berserker'],
+      ['ssp.addCard(id)',      'Add a specific card to your hand. e.g. ssp.addCard("trial_card")'],
+      ['ssp.addCard(id,n)',    'Add n copies of a card to your deck. e.g. ssp.addCard("rock6",3)'],
+      ['ssp.addPack(rarity)',  'Add 5 random cards of that rarity. e.g. ssp.addPack("legendary")'],
+      ['ssp.showNext()',       'Reveal the top card of the CPU\'s deck in the console'],
+      ['ssp.peek()',           'Force-enable the CPU hand peek for this fight'],
+      ['ssp.skipRound()',      'Instantly win the current fight'],
+      ['ssp.setRound(n)',      'Jump to round n. e.g. ssp.setRound(3)'],
+      ['ssp.killCPU()',        'Set CPU HP to 1'],
+      ['ssp.refillDeck()',     'Add a full copy of your starting deck back into your deck'],
+      ['ssp.clearPersist()',   'Wipe all saved unlocks and run data (fresh save)'],
+      ['ssp.listCards()',      'Print all card IDs to console'],
+      ['ssp.bonus(id)',        'Give a permanent run bonus. e.g. ssp.bonus("stoneCrown")'],
+      ['ssp.luck(n)',          'Set luck meter to n (0-100)'],
+    ];
+    console.group('%c⚖ Stone Scissors Paper — Dev Console', 'color:#f39c12;font-size:14px;font-weight:bold;');
+    cmds.forEach(([cmd,desc])=> console.log(`%c${cmd.padEnd(28)}%c${desc}`, 'color:#5dade2', 'color:#9e99a0'));
+    console.groupEnd();
+    return '— listed above —';
+  },
+
+  heal(n=100){
+    const amt = parseInt(n)||100;
+    G.playerHP = Math.min(G.playerMaxHP, G.playerHP + amt);
+    updateHeader(); setLog(`[Dev] +${amt} HP`);
+    return `HP now ${G.playerHP}/${G.playerMaxHP}`;
+  },
+
+  god(){
+    G.playerMaxHP=9999; G.playerHP=9999;
+    updateHeader(); setLog('[Dev] God mode — 9999 HP');
+    return 'God mode on';
+  },
+
+  gold(n=100){
+    const amt=parseInt(n)||100;
+    G.playerGold+=amt;
+    updateHeader(); setLog(`[Dev] +${amt} gold`);
+    return `Gold now ${G.playerGold}`;
+  },
+
+  unlockAll(){
+    Object.keys(CARDS).forEach(id=>unlockCard(id));
+    Object.keys(DECK_DEFS).forEach(id=>unlockCard('deck_'+id));
+    savePersist(PERSIST);
+    if(document.getElementById('start-screen').classList.contains('active')) renderDeckGrid();
+    return `Unlocked ${PERSIST.unlocked.length} items`;
+  },
+
+  unlockDeck(id){
+    if(!DECK_DEFS[id]){ return `Unknown deck: ${id}. Valid: ${Object.keys(DECK_DEFS).join(', ')}`; }
+    unlockCard('deck_'+id); savePersist(PERSIST);
+    if(document.getElementById('start-screen').classList.contains('active')) renderDeckGrid();
+    return `Unlocked deck: ${DECK_DEFS[id].name}`;
+  },
+
+  addCard(id, n=1){
+    const card = CARDS[id];
+    if(!card){ return `Unknown card: "${id}". Use ssp.listCards() to see all IDs.`; }
+    const count = parseInt(n)||1;
+    for(let i=0;i<count;i++){
+      const c=makeCard(id);
+      if(c.isbuff||c.type==='buff') G.playerBuffHand.push(c);
+      else if(G.playerHand.length<7) G.playerHand.push(c);
+      else G.playerDeck.unshift(c);
+    }
+    renderHands(); setLog(`[Dev] Added ${count}x ${card.name} to hand/deck`);
+    return `Added ${count}x "${card.name}" (${card.rarity} ${card.type})`;
+  },
+
+  addPack(rarity='rare'){
+    const valid=['common','uncommon','rare','legendary'];
+    if(!valid.includes(rarity)) return `Rarity must be one of: ${valid.join(', ')}`;
+    const pool=Object.keys(CARDS).filter(id=>CARDS[id].rarity===rarity);
+    if(pool.length===0) return 'No cards found for that rarity';
+    const picks=shuffle([...pool]).slice(0,5);
+    picks.forEach(id=>{ const c=makeCard(id); if(c) G.playerDeck.push(c); });
+    renderHands(); updateHeader();
+    setLog(`[Dev] Added 5 ${rarity} cards to deck`);
+    return `Added: ${picks.join(', ')}`;
+  },
+
+  showNext(){
+    const cpuTop = G.cpuHand[0] || G.cpuDeck[0];
+    if(!cpuTop){ console.log('CPU has no cards'); return 'CPU deck empty'; }
+    console.log('%c CPU Next Card:', 'color:#e74c3c;font-weight:bold;', cpuTop);
+    return `${cpuTop.name} (${cpuTop.type}, power ${cpuTop.power}, ${cpuTop.rarity})`;
+  },
+
+  peek(){
+    G.canPeekCPU=true;
+    const badge=document.getElementById('peek-badge');
+    if(badge) badge.style.display='inline';
+    renderHands(); setLog('[Dev] Peek enabled');
+    return 'CPU hand now visible';
+  },
+
+  skipRound(){
+    G.cpuHP=0; updateHeader(); setLog('[Dev] Round skipped');
+    winFight();
+    return 'Fight won';
+  },
+
+  setRound(n){
+    const r=parseInt(n);
+    if(isNaN(r)||r<1||r>G.maxRounds) return `Round must be 1–${G.maxRounds}`;
+    G.round=r; updateHeader(); setLog(`[Dev] Jumped to round ${r}`);
+    return `Now on round ${r}`;
+  },
+
+  killCPU(){
+    G.cpuHP=1; updateHeader(); setLog('[Dev] CPU set to 1 HP');
+    return 'CPU HP = 1';
+  },
+
+  refillDeck(){
+    const extras = G.startingDeck.map(makeCard);
+    extras.forEach(c=>G.playerDeck.push(c));
+    updateHeader(); setLog('[Dev] Deck refilled');
+    return `Added ${extras.length} cards to deck`;
+  },
+
+  clearPersist(){
+    try{ localStorage.removeItem('ssp_persist'); }catch{}
+    PERSIST.unlocked=[]; PERSIST.runs=0; PERSIST.wins=0;
+    return 'Save data cleared — refresh to fully reset';
+  },
+
+  listCards(){
+    const byRarity={common:[],uncommon:[],rare:[],legendary:[]};
+    Object.entries(CARDS).forEach(([id,c])=>{
+      const r=byRarity[c.rarity]||[];
+      r.push(`${id} (${c.name})`);
+      byRarity[c.rarity]=r;
+    });
+    console.group('%c All Card IDs','color:#f39c12;font-weight:bold;');
+    Object.entries(byRarity).forEach(([r,ids])=>{
+      const color={common:'#7f8c8d',uncommon:'#27ae60',rare:'#2980b9',legendary:'#8e44ad'}[r];
+      console.group(`%c${r.toUpperCase()} (${ids.length})`,`color:${color};font-weight:bold;`);
+      ids.forEach(id=>console.log(`  %c${id}`,'color:#ccc'));
+      console.groupEnd();
+    });
+    console.groupEnd();
+    return `${Object.keys(CARDS).length} cards total — see console`;
+  },
+
+  bonus(id){
+    const b=BONUS_POOL.find(x=>x.effect===id||x.id===id);
+    if(!b) return `Unknown bonus "${id}". Valid effects: ${BONUS_POOL.map(x=>x.effect).join(', ')}`;
+    if(G.activeBonuses.includes(b.effect)) return `Already have: ${b.name}`;
+    G.activeBonuses.push(b.effect); updateHeader(); setLog(`[Dev] Bonus added: ${b.name}`);
+    return `Added bonus: ${b.name}`;
+  },
+
+  luck(n=100){
+    G.luckMeter=clamp(parseInt(n)||0,0,100);
+    updateHeader(); setLog(`[Dev] Luck set to ${G.luckMeter}%`);
+    return `Luck = ${G.luckMeter}%`;
+  },
+};
+
+// ═══════════════════════════════════════════════════
+//  JESTER COIN FLIP MINI-GAME
+// ═══════════════════════════════════════════════════
+let _coinResolve = null;
+
+function showCoinFlip(){
+  return new Promise(resolve => {
+    _coinResolve = resolve;
+    const ol = document.getElementById('coin-overlay');
+    document.getElementById('coin-choice-row').style.display='flex';
+    document.getElementById('coin-canvas').style.display='none';
+    document.getElementById('coin-result-label').textContent='';
+    document.getElementById('coin-outcome-btn').style.display='none';
+
+    // Show luck influence hint
+    const luck = G.luckMeter || 0;
+    const luckBonus = Math.floor(luck / 10); // 0-10 % bonus
+    const isGambler = G.selectedDeck === 'gambler';
+    const gamblerNote = isGambler ? ' (+5% Gambler bonus)' : '';
+    const winChance = Math.min(95, 50 + luckBonus + (isGambler ? 5 : 0));
+    document.getElementById('coin-luck-label').textContent =
+      `Luck: ${luck}% → Win chance ${winChance}%${gamblerNote}`;
+
+    document.getElementById('coin-subtitle').textContent =
+      'The Jester demands a wager. Choose your fate...';
+    ol.style.display='flex';
+  });
+}
+
+async function jesterPick(choice){
+  const ol = document.getElementById('coin-overlay');
+  document.getElementById('coin-choice-row').style.display='none';
+  document.getElementById('coin-subtitle').textContent = `You chose: ${choice === 'heads' ? '🌕 Heads' : '🌑 Tails'}`;
+
+  // Compute weighted result (luck + gambler bonus)
+  const luck = G.luckMeter || 0;
+  const luckBonus = luck / 10; // 0-10%
+  const gamblerBonus = G.selectedDeck === 'gambler' ? 5 : 0;
+  const winChance = Math.min(95, 50 + luckBonus + gamblerBonus) / 100;
+  const playerWins = Math.random() < winChance;
+  const result = playerWins ? choice : (choice === 'heads' ? 'tails' : 'heads');
+
+  // Animate the coin
+  const canvas = document.getElementById('coin-canvas');
+  canvas.style.display='block';
+  await animateCoinFlip(canvas, result);
+
+  // Show result
+  const won = result === choice;
+  const label = document.getElementById('coin-result-label');
+  label.style.color = won ? 'var(--scissors-l)' : 'var(--rock-l)';
+  label.textContent = won
+    ? `🌟 ${result.toUpperCase()}! The Jester smiles — you WIN!`
+    : `💀 ${result.toUpperCase()}! The Jester laughs — you LOSE!`;
+
+  await delay(800);
+
+  // Apply outcome to game state
+  if(won){
+    const dmg = Math.max(6, Math.floor(G.cpuMaxHP * 0.2));
+    G.cpuHP = Math.max(0, G.cpuHP - dmg);
+    showDmgFloat(`-${dmg}`, true);
+    G.loseStreak=0; G.cpuLoseStreak++; G.totalWins++;
+    setLog(`Jester Coin: HEADS! Won! -${dmg} CPU HP`);
+  } else {
+    const dmg = Math.max(5, Math.floor(G.playerMaxHP * 0.2));
+    G.playerHP = Math.max(0, G.playerHP - dmg);
+    showDmgFloat(`-${dmg}`, false);
+    G.loseStreak++; G.cpuLoseStreak=0; G.totalLosses++;
+    setLog(`Jester Coin: TAILS! Lost! -${dmg} HP`);
+  }
+
+  document.getElementById('coin-outcome-btn').style.display='block';
+  updateHeader();
+}
+
+function closeCoinOverlay(){
+  document.getElementById('coin-overlay').style.display='none';
+  G.luckMeter = clamp(G.luckMeter + 2, 0, 100);
+  G.totalRounds++;
+  tickEffects(); updateHeader(); checkGameOver('hp');
+  G.phase='idle';
+  checkStreaks();
+  if(G.phase !== 'gameover') nextTurn();
+  if(_coinResolve){ _coinResolve(); _coinResolve=null; }
+}
+
+function animateCoinFlip(canvas, finalSide){
+  return new Promise(resolve => {
+    const ctx = canvas.getContext('2d');
+    const W = canvas.width, H = canvas.height;
+    const cx = W/2, cy = H/2, r = W/2 - 8;
+    let frame = 0;
+    // Total flips: 3 full spins then settle on finalSide
+    const totalFrames = 80;
+    const spinFrames = 64; // fast spins
+    const settleFrames = 16;
+
+    // Colors
+    const headsColor = '#f1c40f';
+    const tailsColor = '#7f8c8d';
+    const edgeColor = '#d4ac0d';
+
+    function draw(){
+      ctx.clearRect(0, 0, W, H);
+
+      let scaleX, phase, isHeads;
+      if(frame < spinFrames){
+        // spinning — scaleX oscillates between -1 and 1 many times
+        const t = frame / spinFrames;
+        const spins = 4; // full spins during spin phase
+        scaleX = Math.cos(t * spins * Math.PI * 2);
+        isHeads = scaleX >= 0; // face depends on which side is showing
+      } else {
+        // settle toward final side
+        const t = (frame - spinFrames) / settleFrames;
+        const targetScale = finalSide === 'heads' ? 1 : -1;
+        const startScale = Math.cos(spinFrames / spinFrames * 4 * Math.PI * 2);
+        scaleX = startScale + (targetScale - startScale) * easeOut(t);
+        isHeads = finalSide === 'heads';
+      }
+
+      const absScale = Math.abs(scaleX);
+      const coinColor = isHeads ? headsColor : tailsColor;
+      const shadowColor = isHeads ? '#b7950b' : '#566573';
+
+      // Draw shadow
+      ctx.save();
+      ctx.translate(cx, cy + r + 4);
+      ctx.scale(absScale, 0.2);
+      ctx.beginPath();
+      ctx.arc(0, 0, r, 0, Math.PI*2);
+      ctx.fillStyle = 'rgba(0,0,0,0.4)';
+      ctx.fill();
+      ctx.restore();
+
+      // Draw coin body
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.scale(absScale, 1);
+      ctx.beginPath();
+      ctx.arc(0, 0, r, 0, Math.PI*2);
+      ctx.fillStyle = coinColor;
+      ctx.fill();
+      // Edge highlight
+      ctx.beginPath();
+      ctx.arc(0, 0, r, 0, Math.PI*2);
+      ctx.strokeStyle = edgeColor;
+      ctx.lineWidth = 5;
+      ctx.stroke();
+      // Inner ring
+      ctx.beginPath();
+      ctx.arc(0, 0, r - 10, 0, Math.PI*2);
+      ctx.strokeStyle = shadowColor;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      // Symbol
+      ctx.fillStyle = shadowColor;
+      ctx.font = `bold ${Math.floor(r * 0.7)}px serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(isHeads ? '☀' : '☽', 0, 2);
+      ctx.restore();
+
+      frame++;
+      if(frame <= totalFrames){
+        requestAnimationFrame(draw);
+      } else {
+        resolve();
+      }
+    }
+    draw();
+  });
+}
+
+function easeOut(t){ return 1 - Math.pow(1 - t, 3); }
+
+// Make sure 'jester' is in SOLO_EFFECTS (already set above) and not in NEEDS_CPU
+
+
+// ═══════════════════════════════════════════════════
+//  TRIPLE MIND GAME
+// ═══════════════════════════════════════════════════
+async function showTripleMindGame(){
+  const types=['rock','paper','scissors'];
+  const correct=rand(types);
+  const guess=await new Promise(resolve=>{
+    const ol=document.createElement('div');
+    ol.id='triple-mind-ol';
+    ol.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:400;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1rem;';
+    ol.innerHTML=`<div style="font-family:Cinzel,serif;font-size:1.4rem;color:var(--gold);">🧠 Triple Mind Game</div>
+      <div style="font-size:.85rem;color:var(--t2);text-align:center;">Guess the CPU's symbol. Right → draw 3 cards. Wrong → discard 2.</div>
+      <div style="display:flex;gap:.75rem;flex-wrap:wrap;justify-content:center;">
+        <button class="btn sm danger" data-g="rock">🪨 Rock</button>
+        <button class="btn sm info" data-g="paper">📄 Paper</button>
+        <button class="btn sm success" data-g="scissors">✂️ Scissors</button>
+      </div>`;
+    ol.querySelectorAll('button').forEach(b=>b.onclick=()=>{ document.body.removeChild(ol); resolve(b.dataset.g); });
+    document.body.appendChild(ol);
+  });
+  if(guess===correct){
+    drawCards(3); renderHands();
+    setLog(`Triple Mind Game: Correct! CPU had ${correct} — drew 3 cards!`);
+  } else {
+    const toDiscard=Math.min(2,G.playerHand.length);
+    for(let i=0;i<toDiscard;i++) G.playerHand.splice(Math.floor(Math.random()*G.playerHand.length),1);
+    renderHands();
+    setLog(`Triple Mind Game: Wrong! CPU had ${correct} — discarded ${toDiscard} cards.`);
+  }
+  G.luckMeter=clamp(G.luckMeter+2,0,100);
+  G.totalRounds++;
+  tickEffects(); updateHeader(); checkGameOver('hp');
+  G.phase='idle';
+  if(G.phase!=='gameover') await nextTurn();
+}
+
+// ═══════════════════════════════════════════════════
+//  CARD DETAIL MODAL
+// ═══════════════════════════════════════════════════
+function showCardDetail(cardId){
+  const c=CARDS[cardId]; if(!c) return;
+  const rarityColor={common:'var(--common)',uncommon:'var(--uncommon)',rare:'var(--rare)',legendary:'var(--legendary)'}[c.rarity]||'var(--t1)';
+  const existing=document.getElementById('card-detail-modal');
+  if(existing) existing.remove();
+  const modal=document.createElement('div');
+  modal.id='card-detail-modal';
+  modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:500;display:flex;align-items:center;justify-content:center;padding:1rem;';
+  modal.innerHTML=`
+    <div style="background:var(--s2);border:1px solid ${rarityColor};border-radius:16px;padding:1.5rem;max-width:380px;width:100%;box-shadow:0 0 40px rgba(0,0,0,.6);position:relative;">
+      <button onclick="document.getElementById('card-detail-modal').remove()" style="position:absolute;top:.6rem;right:.8rem;background:none;border:none;color:var(--t2);font-size:1.2rem;cursor:pointer;">✕</button>
+      <div style="font-size:2.5rem;text-align:center;margin-bottom:.5rem;">${c.icon}</div>
+      <div style="font-family:'Cinzel',serif;font-size:1.1rem;font-weight:700;text-align:center;color:${rarityColor};margin-bottom:.25rem;">${c.name}</div>
+      <div style="font-size:.7rem;text-align:center;color:${rarityColor};letter-spacing:.1em;text-transform:uppercase;margin-bottom:.75rem;">${c.rarity}${c.type==='buff'?' · Buff':c.type==='special'?' · Special':' · '+c.type.charAt(0).toUpperCase()+c.type.slice(1)}</div>
+      ${c.ability?`<div style="background:var(--s3);border-radius:8px;padding:.65rem .9rem;font-size:.82rem;color:var(--t1);margin-bottom:.75rem;line-height:1.55;">${c.ability}</div>`:''}
+      ${c.power>0?`<div style="font-size:.75rem;color:var(--gold);margin-bottom:.6rem;">⚡ Power: ${c.power}</div>`:''}
+      ${c.lore?`<div style="font-size:.78rem;color:var(--t2);font-style:italic;border-top:1px solid var(--border);padding-top:.65rem;line-height:1.55;">${c.lore}</div>`:'<div style="font-size:.78rem;color:var(--t3);font-style:italic;border-top:1px solid var(--border);padding-top:.65rem;">A card of the arena.</div>'}
+    </div>`;
+  modal.onclick=(e)=>{ if(e.target===modal) modal.remove(); };
+  document.body.appendChild(modal);
+}
+
+
+
+// ═══════════════════════════════════════════════════
+//  MULTIPLAYER — PeerJS P2P
+// ═══════════════════════════════════════════════════
+
+// Lazy-load PeerJS from CDN only when multiplayer is opened
+let _peerJsLoaded = false;
+function loadPeerJS(cb){
+  if(window.Peer){ cb(); return; }
+  if(_peerJsLoaded){ const t=setInterval(()=>{ if(window.Peer){ clearInterval(t); cb(); } },100); return; }
+  _peerJsLoaded=true;
+  const s=document.createElement('script');
+  s.src='https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js';
+  s.onload=cb;
+  s.onerror=()=>{ mpSetStatus('peer','Failed to load PeerJS — check your internet connection.',false); };
+  document.head.appendChild(s);
+}
+
+// ── Multiplayer State ──
+const MP = {
+  peer:null, conn:null,
+  isHost:false,
+  myDeck:[], myHand:[], myHP:20, myMaxHP:20,
+  oppHP:20, oppMaxHP:20,
+  myLockedCard:null, oppLockedCard:null,
+  round:1, handSize:5,
+  myName:'Player', oppName:'Opponent',
+  phase:'idle',   // idle | waiting-for-opp | revealing | gameover
+  deckId:null,
+};
+
+// ── Lobby UI helpers ──
+function mpPopulateDeckSelects(){
+  const opts=Object.entries(DECK_DEFS)
+    .filter(([id,d])=>!d.locked||isUnlocked('deck_'+id))
+    .map(([id,d])=>`<option value="${id}">${d.icon} ${d.name}</option>`).join('');
+  document.getElementById('mp-deck-select').innerHTML=opts;
+  document.getElementById('mp-join-deck-select').innerHTML=opts;
+}
+
+function mpSetStatus(side, msg, isError=false){
+  const el=document.getElementById(side==='host'?'mp-host-status':side==='join'?'mp-join-status':'mp-conn-label');
+  if(!el) return;
+  el.textContent=msg;
+  el.style.color=isError?'var(--rock-l)':'var(--t2)';
+}
+
+function mpSetConnDot(state){ // 'waiting' | 'online' | 'offline'
+  const dot=document.getElementById('mp-dot');
+  const label=document.getElementById('mp-conn-label');
+  if(!dot) return;
+  dot.className='mp-conn-dot '+state;
+  const msgs={waiting:'Connecting to relay…',online:'Connected to relay ✓',offline:'Relay offline — try refreshing'};
+  if(label) label.textContent=msgs[state]||'';
+}
+
+// Called when multiplayer button is clicked — lazy-load PeerJS and init peer
+function openMpLobby(){
+  mpPopulateDeckSelects();
+  showScreen('mp-lobby-screen');
+  mpSetConnDot('waiting');
+  loadPeerJS(()=>{
+    if(MP.peer&&!MP.peer.destroyed) { mpSetConnDot('online'); mpEnableBtns(); return; }
+    const peer=new Peer(undefined,{debug:0});
+    MP.peer=peer;
+    peer.on('open',()=>{ mpSetConnDot('online'); mpEnableBtns(); });
+    peer.on('error',(e)=>{ mpSetConnDot('offline'); mpSetStatus('peer',e.type==='unavailable-id'?'Code taken — try again':('Error: '+e.type),true); });
+    peer.on('disconnected',()=>{ mpSetConnDot('offline'); peer.reconnect(); });
+  });
+}
+
+function mpEnableBtns(){
+  const hb=document.getElementById('mp-host-btn');
+  const jb=document.getElementById('mp-join-btn');
+  if(hb) hb.disabled=false;
+  if(jb) jb.disabled=false;
+}
+
+// ── HOST ──
+function mpHost(){
+  if(!MP.peer||MP.peer.destroyed){ mpSetStatus('host','Not connected to relay yet.',true); return; }
+  // Generate a 4-letter room code = last 4 chars of peer ID (uppercase letters only)
+  const peerId=MP.peer.id;
+  const code=peerId.replace(/[^A-Z]/gi,'').toUpperCase().slice(-4)||
+             peerId.replace(/[^0-9]/g,'').slice(-4)||peerId.slice(-4).toUpperCase();
+  document.getElementById('mp-host-code').textContent=code;
+  document.getElementById('mp-host-code-area').style.display='block';
+  mpSetStatus('host','Waiting for opponent to join…');
+  MP.isHost=true;
+  MP.deckId=document.getElementById('mp-deck-select').value;
+  MP.handSize=parseInt(document.getElementById('mp-hand-select').value)||5;
+  MP.peer.on('connection',conn=>{ mpOnConnection(conn); });
+}
+
+function mpCopyCode(){
+  const code=document.getElementById('mp-host-code').textContent;
+  navigator.clipboard.writeText(code).then(()=>mpSetStatus('host','Code copied!'));
+}
+
+// ── JOIN ──
+function mpJoin(){
+  if(!MP.peer||MP.peer.destroyed){ mpSetStatus('join','Not connected to relay yet.',true); return; }
+  const input=document.getElementById('mp-join-code').value.trim().toUpperCase();
+  if(input.length<3){ mpSetStatus('join','Enter the full room code.',true); return; }
+  MP.deckId=document.getElementById('mp-join-deck-select').value;
+  MP.isHost=false;
+  mpSetStatus('join','Connecting to host…');
+  // Find the peer by searching for a peer whose ID ends with the code
+  // Since PeerJS generates random IDs, the host needs to share their full peer ID OR we embed the code in it
+  // We use a known prefix so IDs are predictable
+  const hostId = _mpFindPeerId(input);
+  const conn=MP.peer.connect(hostId,{reliable:true,serialization:'json'});
+  conn.on('open',()=>{ mpOnConnection(conn); mpSetStatus('join','Connected!'); });
+  conn.on('error',(e)=>mpSetStatus('join','Could not connect: '+e.message,true));
+}
+
+// Since PeerJS assigns random IDs we need a way to reconstruct the host's peer ID from the code.
+// Solution: when hosting we set a custom peer ID that IS the code (4 uppercase letters).
+// Re-init peer with custom ID on host.
+function mpHostWithCode(){
+  if(!MP.peer||MP.peer.destroyed){ mpSetStatus('host','Not connected to relay yet.',true); return; }
+  MP.peer.destroy();
+  MP.peer=null;
+  const code=_mpGenCode();
+  loadPeerJS(()=>{
+    const peer=new Peer('SSP-'+code,{debug:0});
+    MP.peer=peer;
+    peer.on('open',id=>{
+      document.getElementById('mp-host-code').textContent=code;
+      document.getElementById('mp-host-code-area').style.display='block';
+      mpSetStatus('host','Waiting for opponent…');
+      MP.isHost=true;
+      MP.deckId=document.getElementById('mp-deck-select').value;
+      MP.handSize=parseInt(document.getElementById('mp-hand-select').value)||5;
+      peer.on('connection',conn=>mpOnConnection(conn));
+    });
+    peer.on('error',e=>{
+      // ID taken — try again with different code
+      if(e.type==='unavailable-id') mpHostWithCode();
+      else mpSetStatus('host','Error: '+e.type,true);
+    });
+  });
+}
+
+// Override the host button to use fixed-ID approach
+document.addEventListener('DOMContentLoaded',()=>{
+  const hb=document.getElementById('mp-host-btn');
+  if(hb) hb.onclick=mpHostWithCode;
+});
+
+function _mpGenCode(){
+  const chars='ABCDEFGHJKLMNPQRSTUVWXYZ';
+  return Array.from({length:4},()=>chars[Math.floor(Math.random()*chars.length)]).join('');
+}
+function _mpFindPeerId(code){ return 'SSP-'+code.toUpperCase(); }
+
+// ── CONNECTION HANDLER (both host and joiner call this) ──
+function mpOnConnection(conn){
+  MP.conn=conn;
+  conn.on('open',()=>{
+    mpSetStatus('host','Opponent connected! Starting…');
+    mpSetStatus('join','Connected! Starting…');
+    // Exchange deck selections + start the game after a brief delay
+    mpSend({type:'hello', deckId:MP.deckId, name:DECK_DEFS[MP.deckId]?.name||'Player', handSize:MP.handSize||5});
+  });
+  conn.on('data',mpOnData);
+  conn.on('close',()=>{ mpSetStatus('host','Opponent disconnected.',true); mpOnDisconnect(); });
+  conn.on('error',(e)=>{ mpSetStatus('host','Connection error.',true); console.warn('MP conn error',e); });
+}
+
+function mpSend(data){
+  if(MP.conn&&MP.conn.open) MP.conn.send(data);
+}
+
+// ── DATA HANDLER ──
+const _mpHelloBuffer = {};
+function mpOnData(data){
+  switch(data.type){
+    case 'hello':
+      MP.oppName=data.name||'Opponent';
+      _mpHelloBuffer.received=true;
+      _mpHelloBuffer.oppDeckId=data.deckId;
+      _mpHelloBuffer.oppHandSize=data.handSize||5;
+      _mpMaybeStart();
+      break;
+    case 'card-locked':
+      MP.oppLockedCard=data.card;
+      document.getElementById('mp-opp-slot').innerHTML='<span style="font-size:1.5rem">🔒</span><div style="font-size:.6rem;color:var(--gold);margin-top:4px">Locked in</div>';
+      document.getElementById('mp-opp-slot').classList.add('locked');
+      mpSetLog('Opponent locked in — waiting for your card…');
+      _mpMaybeReveal();
+      break;
+    case 'draw-request':
+      // Opponent drew a card — no effect on us, just acknowledge
+      break;
+    case 'rematch':
+      mpStartBattle();
+      break;
+    case 'quit':
+      mpSetLog('Opponent quit the game.');
+      mpShowGameOver('Opponent disconnected — you win!', true);
+      break;
+  }
+}
+
+let _mpHelloSent=false;
+function _mpMaybeStart(){
+  if(!_mpHelloSent){ _mpHelloSent=true; }
+  if(_mpHelloBuffer.received){ mpStartBattle(); }
+}
+
+// ── BATTLE SETUP ──
+function mpStartBattle(){
+  MP.round=1;
+  MP.myHP=20; MP.myMaxHP=20;
+  MP.oppHP=20; MP.oppMaxHP=20;
+  const deckDef=DECK_DEFS[MP.deckId];
+  if(!deckDef){ mpSetStatus('host','Unknown deck.',true); return; }
+  MP.myDeck=shuffle(deckDef.cards.map(makeCard));
+  MP.myHand=[];
+  MP.myLockedCard=null; MP.oppLockedCard=null;
+  MP.phase='idle';
+  showScreen('mp-battle-screen');
+  document.getElementById('mp-opp-name').textContent=MP.oppName;
+  _mpHelloSent=false; _mpHelloBuffer.received=false;
+  mpDrawCards(MP.handSize||5);
+  mpUpdateHeader();
+  mpSetLog('Round 1 — choose your card and lock it in!');
+  mpRenderHand();
+  document.getElementById('mp-play-btn').disabled=true;
+  document.getElementById('mp-draw-btn').disabled=false;
+  document.getElementById('mp-p-slot').innerHTML='Select below';
+  document.getElementById('mp-p-slot').className='mp-slot';
+  document.getElementById('mp-opp-slot').innerHTML='Waiting…';
+  document.getElementById('mp-opp-slot').className='mp-slot';
+}
+
+// ── HAND / DECK ──
+function mpDrawCards(n=1){
+  for(let i=0;i<n;i++){
+    if(MP.myDeck.length===0){
+      // Reshuffle discard or refill from deck template
+      const deckDef=DECK_DEFS[MP.deckId];
+      if(deckDef) MP.myDeck=shuffle(deckDef.cards.map(makeCard));
+    }
+    if(MP.myDeck.length===0) break;
+    if(MP.myHand.length>=7) break;
+    // Only take non-buff cards for mp (simplified)
+    const card=MP.myDeck.shift();
+    if(card&&!card.isbuff) MP.myHand.push(card);
+    else if(card) MP.myDeck.push(card); // put buffs back
+  }
+}
+
+function mpDrawCard(){
+  if(MP.myHand.length>=7){ mpSetLog('Hand full!'); return; }
+  mpDrawCards(1);
+  mpRenderHand();
+  mpSend({type:'draw-request'});
+}
+
+function mpRenderHand(){
+  const hand=document.getElementById('mp-p-hand');
+  if(!hand) return;
+  hand.innerHTML='';
+  MP.myHand.forEach((card,i)=>{
+    const el=buildCardEl(card);
+    el.onclick=()=>mpSelectCard(i);
+    if(MP._selectedIdx===i) el.classList.add('selected');
+    hand.appendChild(el);
+  });
+}
+
+function mpSelectCard(idx){
+  MP._selectedIdx=idx;
+  mpRenderHand();
+  document.getElementById('mp-play-btn').disabled=false;
+  const card=MP.myHand[idx];
+  if(card){
+    const ps=document.getElementById('mp-p-slot');
+    ps.innerHTML=`<span style="font-size:1.8rem">${card.icon}</span><div style="font-size:.65rem;color:var(--t2);margin-top:3px">${card.name}</div>`;
+    ps.className='mp-slot';
+  }
+}
+
+// ── LOCK IN CARD ──
+function mpPlayCard(){
+  const idx=MP._selectedIdx;
+  if(idx==null||idx<0||idx>=MP.myHand.length){ mpSetLog('Select a card first.'); return; }
+  const card=MP.myHand[idx];
+  MP.myLockedCard=card;
+  MP.myHand.splice(idx,1);
+  MP._selectedIdx=null;
+  document.getElementById('mp-play-btn').disabled=true;
+  document.getElementById('mp-draw-btn').disabled=true;
+  const ps=document.getElementById('mp-p-slot');
+  ps.innerHTML=`<span style="font-size:1.8rem">${card.icon}</span><div style="font-size:.62rem;color:var(--gold);margin-top:3px">Locked in</div>`;
+  ps.classList.add('locked');
+  mpSetLog('Card locked — waiting for opponent…');
+  mpRenderHand();
+  // Send the locked card to opponent
+  mpSend({type:'card-locked', card:{id:card.id,name:card.name,icon:card.icon,type:card.type,power:card.power,rarity:card.rarity,effect:card.effect}});
+  _mpMaybeReveal();
+}
+
+// ── REVEAL ──
+function _mpMaybeReveal(){
+  if(MP.myLockedCard&&MP.oppLockedCard) setTimeout(mpRevealCards,400);
+}
+
+async function mpRevealCards(){
+  MP.phase='revealing';
+  const pCard=MP.myLockedCard;
+  const cCard=MP.oppLockedCard;
+  if(!pCard||!cCard) return;
+
+  // Show both cards
+  const ps=document.getElementById('mp-p-slot');
+  const cs=document.getElementById('mp-opp-slot');
+  ps.className='mp-slot revealed';
+  cs.className='mp-slot revealed';
+  cs.innerHTML=`<span style="font-size:1.8rem">${cCard.icon}</span><div style="font-size:.65rem;color:var(--t2);margin-top:3px">${cCard.name}</div>`;
+  await mpDelay(600);
+
+  // Resolve
+  const pType=pCard.type==='buff'?'rock':(['rock','paper','scissors'].includes(pCard.type)?pCard.type:'special');
+  const cType=cCard.type==='buff'?'rock':(['rock','paper','scissors'].includes(cCard.type)?cCard.type:'special');
+  const pPow=pCard.power||3;
+  const cPow=cCard.power||3;
+  let outcome;
+  if(pType==='special'||cType==='special'){
+    // Special cards auto-win for the player who played them (simplified for MP)
+    outcome='win';
+  } else {
+    outcome=rpsResolve(pType,cType,pPow,cPow);
+  }
+
+  let dmg=0, log='';
+  const ra=document.getElementById('mp-result-area');
+  if(outcome==='win'){
+    dmg=pPow; MP.oppHP=Math.max(0,MP.oppHP-dmg);
+    log=`Your ${pCard.name} beats ${cCard.name}! -${dmg} HP`;
+    ra.innerHTML=`<div style="font-family:'Cinzel',serif;color:var(--scissors-l);font-size:1.1rem;font-weight:700;">WIN +${dmg}</div>`;
+  } else if(outcome==='lose'){
+    dmg=cPow; MP.myHP=Math.max(0,MP.myHP-dmg);
+    log=`${cCard.name} beats your ${pCard.name}! -${dmg} HP`;
+    ra.innerHTML=`<div style="font-family:'Cinzel',serif;color:var(--rock-l);font-size:1.1rem;font-weight:700;">LOSS -${dmg}</div>`;
+  } else {
+    log=`Draw! ${pCard.name} vs ${cCard.name}`;
+    ra.innerHTML=`<div style="font-family:'Cinzel',serif;color:var(--gold);font-size:1.1rem;font-weight:700;">DRAW</div>`;
+  }
+  mpSetLog(log);
+  mpUpdateHeader();
+  await mpDelay(1800);
+
+  // Check game over
+  if(MP.myHP<=0){ mpShowGameOver('You were defeated!', false); return; }
+  if(MP.oppHP<=0){ mpShowGameOver('You win the duel!', true); return; }
+
+  // Next round
+  MP.round++;
+  MP.myLockedCard=null;
+  MP.oppLockedCard=null;
+  MP.phase='idle';
+  ra.innerHTML='';
+  ps.className='mp-slot'; ps.innerHTML='Select below';
+  cs.className='mp-slot'; cs.innerHTML='Waiting…';
+  document.getElementById('mp-round-badge').textContent='Round '+MP.round;
+  if(MP.myHand.length<3) mpDrawCards(Math.min(2,5-MP.myHand.length));
+  mpRenderHand();
+  document.getElementById('mp-draw-btn').disabled=false;
+  document.getElementById('mp-play-btn').disabled=true;
+  mpSetLog('Round '+MP.round+' — choose your card!');
+}
+
+// ── GAME OVER ──
+function mpShowGameOver(msg, won){
+  MP.phase='gameover';
+  const ra=document.getElementById('mp-result-area');
+  ra.innerHTML=`
+    <div style="display:flex;flex-direction:column;align-items:center;gap:.75rem;padding:1rem;">
+      <div style="font-family:'Cinzel',serif;font-size:1.4rem;font-weight:900;color:${won?'var(--scissors-l)':'var(--rock-l)'};">${won?'🏆 Victory!':'💀 Defeated!'}</div>
+      <div style="font-size:.85rem;color:var(--t2);">${msg}</div>
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap;justify-content:center;">
+        <button class="btn sm primary" onclick="mpRequestRematch()">Rematch</button>
+        <button class="btn sm" onclick="mpQuit()">← Back to Menu</button>
+      </div>
+    </div>`;
+  mpSetLog(won?'You win!' : 'Better luck next time.');
+}
+
+function mpRequestRematch(){
+  mpSend({type:'rematch'});
+  mpStartBattle();
+}
+
+function mpQuit(){
+  mpSend({type:'quit'});
+  if(MP.conn){ try{ MP.conn.close(); }catch{} }
+  MP.myLockedCard=null; MP.oppLockedCard=null; MP.phase='idle';
+  showScreen('start');
+}
+
+function mpOnDisconnect(){
+  if(MP.phase!=='gameover') mpShowGameOver('Opponent disconnected.',true);
+}
+
+// ── HEADER ──
+function mpUpdateHeader(){
+  const pct=(v,max)=>Math.round(Math.max(0,v/max)*100)+'%';
+  document.getElementById('mp-p-hp-txt').textContent=MP.myHP+'/'+MP.myMaxHP;
+  document.getElementById('mp-c-hp-txt').textContent=MP.oppHP+'/'+MP.oppMaxHP;
+  document.getElementById('mp-p-hp-fill').style.width=pct(MP.myHP,MP.myMaxHP);
+  document.getElementById('mp-c-hp-fill').style.width=pct(MP.oppHP,MP.oppMaxHP);
+}
+
+function mpSetLog(msg){ const el=document.getElementById('mp-log'); if(el) el.textContent=msg; }
+function mpDelay(ms){ return new Promise(r=>setTimeout(r,ms)); }
+
+// Patch lobby screen button to use openMpLobby
+document.addEventListener('DOMContentLoaded',()=>{
+  const mpBtn=document.querySelector('button[onclick="showScreen(\'mp-lobby-screen\')"]');
+  if(mpBtn){ mpBtn.onclick=openMpLobby; }
+});
+
+window.ssp = ssp;
+console.log('%c⚖ Stone Scissors Paper — type ssp.help() for dev commands','color:#f39c12;font-weight:bold;font-size:12px;');
+
+initStart();
+showScreen('start');
+</script>
+</body>
+</html>
